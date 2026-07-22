@@ -25,7 +25,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com-henrikns92/henrikns92/go-sdk"
+	openapiclient "github.com-alvarez01337/alvarez01337/go-sdk"
 )
 
 func main() {
