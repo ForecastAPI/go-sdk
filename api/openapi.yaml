@@ -1,0 +1,6113 @@
+openapi: 3.0.3
+info:
+  contact:
+    email: support@forecastapi.com
+    name: Support
+  description: Time series forecasting service with multiple algorithms and automatic
+    method selection
+  title: ForecastAPI
+  version: 2.0.0
+servers:
+- description: Production server
+  url: https://forecastapi.com
+tags:
+- description: Health check endpoints
+  name: Health
+- description: Time series forecasting operations
+  name: Forecasting
+- description: Hierarchical forecasting with reconciliation — parts that sum to the
+    whole
+  name: Grouped Forecasting
+- description: Asynchronous forecasting of many independent series in one call
+  name: Batch Forecasting
+- description: Statistical anomaly detection in time series data
+  name: Anomaly Detection
+- description: Product performance analysis with classified insights and recommendations
+  name: Product Insights
+- description: Data analysis operations
+  name: Analysis
+- description: Comprehensive inventory management and supplier optimization
+  name: Inventory Planning
+- description: Infrastructure scaling and traffic pattern analysis
+  name: Traffic Forecasting
+paths:
+  /v1/{any}:
+    get:
+      deprecated: true
+      operationId: deprecatedV1
+      parameters:
+      - explode: false
+        in: path
+        name: any
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/deprecatedV1_404_response"
+          description: API v1 has been deprecated
+      summary: Deprecated v1 endpoints
+  /v2:
+    get:
+      operationId: getApiRoot
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/getApiRoot_200_response"
+          description: API v2 Home
+      summary: API root endpoint
+      tags:
+      - Health
+  /v2/health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/healthCheck_200_response"
+          description: Health status of the API
+      summary: Health check endpoint
+      tags:
+      - Health
+  /v2/forecast:
+    post:
+      operationId: createForecast
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForecastRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastResponse"
+          description: Successful forecast generation
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createForecast_400_response"
+          description: No suitable forecasting method found
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+          description: Validation error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createForecast_502_response"
+          description: The forecasting backend failed to produce a forecast
+      security:
+      - apiKey: []
+      summary: Generate forecast for time series data
+      tags:
+      - Forecasting
+  /v2/forecast/grouped:
+    post:
+      description: |
+        Forecast a set of related series that roll up to a total — MRR by plan and region,
+        demand by warehouse, revenue by category — and get back one coherent result: every
+        parent equals the sum of its children, in every period, at every level.
+
+        You send only the **leaves** of the hierarchy (every combination of the declared
+        dimensions, each with its own history). The API derives every aggregate level and the
+        grand total by summing the leaf histories, forecasts the nodes, reconciles them to
+        coherence, and stores each node as its own entity with independently tracked accuracy.
+
+        Processing is **asynchronous**: submission returns `202` with an id to poll via
+        `GET /v2/forecast/grouped/{grouped_forecast_id}`. The run executes in the background
+        as one all-or-nothing job — a hierarchy is one coherent answer, so there is no partial
+        success. If any node cannot be forecast, the run fails with the reason rather than
+        returning numbers that don't add up.
+
+        If you just want independent forecasts per slice — no coherent roll-up — the batch
+        endpoint with per-series identifiers or `tenant_context` is simpler and tolerates
+        per-series failure.
+      operationId: createGroupedForecast
+      requestBody:
+        content:
+          application/json:
+            examples:
+              mrr_by_region_and_plan:
+                summary: MRR split by region and plan
+                value:
+                  identifier: mrr
+                  hierarchy:
+                  - region
+                  - plan
+                  reconciliation: bottom_up
+                  frequency: M
+                  periods: 6
+                  data_type: revenue
+                  series:
+                  - segment:
+                      region: eu
+                      plan: pro
+                    data:
+                    - date: 2024-01-01
+                      value: 42000
+                    - date: 2024-02-01
+                      value: 43800
+                  - segment:
+                      region: eu
+                      plan: free
+                    data:
+                    - date: 2024-01-01
+                      value: 3100
+                    - date: 2024-02-01
+                      value: 3300
+                  - segment:
+                      region: us
+                      plan: pro
+                    data:
+                    - date: 2024-01-01
+                      value: 61000
+                    - date: 2024-02-01
+                      value: 62500
+            schema:
+              $ref: "#/components/schemas/GroupedForecastRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupedForecastAccepted"
+          description: Accepted — the hierarchy is queued for background processing
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              example:
+                error: Validation failed
+                errors:
+                  series:
+                  - "All series must end on the same date so their forecast periods\
+                    \ align; found last dates: 2024-02-01, 2024-03-01."
+                time_taken_ms: 12.4
+              schema:
+                $ref: "#/components/schemas/ValidationFailedResponse"
+          description: |
+            Validation error. Notable rejections beyond field-shape errors: per-series config
+            overrides (`series.*.periods`, `series.*.model`, …), the planning parameters
+            (`quantiles`, `value_bounds`, `adjustments`, `accumulate`) at any level, a
+            `segment` not naming exactly the declared hierarchy dimensions, duplicate
+            segments, series not ending on the same date, `reconciliation: top_down`, and a
+            hierarchy expanding past 250 nodes.
+      security:
+      - apiKey: []
+      summary: Submit a grouped (hierarchical) forecast with reconciliation
+      tags:
+      - Grouped Forecasting
+  /v2/forecast/grouped/{grouped_forecast_id}:
+    get:
+      description: |
+        Returns the run's status. Once `completed`, `results` carries a node map keyed by
+        segment (`total`, `region=eu`, `plan=pro|region=eu`, …) — every node with its own
+        forecast rows, its place in the tree, and the reconciliation details. If the run
+        `failed`, `error` carries the reason and `results` stays null.
+      operationId: getGroupedForecast
+      parameters:
+      - description: The id returned by POST /v2/forecast/grouped
+        explode: false
+        in: path
+        name: grouped_forecast_id
+        required: true
+        schema:
+          example: k3n9x2m4p8q1w5r7
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupedForecastStatusResponse"
+          description: Current status of the grouped forecast run
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/getGroupedForecast_404_response"
+          description: No grouped forecast with this id exists for your team
+      security:
+      - apiKey: []
+      summary: Poll a grouped forecast for status and results
+      tags:
+      - Grouped Forecasting
+  /v2/batch/forecast:
+    post:
+      description: |
+        Forecast up to 100,000 independent series in one call (10 on the free tier), at a
+        discount per forecast. Each series is processed independently — one failing series
+        does not fail the others. Submission returns `202` with a `batch_id` to poll via
+        `GET /v2/batch/forecast/{batch_id}`.
+
+        Request-level `periods`, `frequency`, `data_type`, `confidence` and the four
+        planning parameters (`quantiles`, `value_bounds`, `adjustments`, `accumulate`) act
+        as defaults every series inherits; any series may override any of them. `model` is
+        request-level only.
+
+        For payloads too large to send inline, get a presigned upload URL from
+        `POST /v2/batch/forecast/presign` and submit `file_key` instead of `series`.
+      operationId: createBatchForecast
+      requestBody:
+        content:
+          application/json:
+            example:
+              series:
+              - identifier: SKU-001
+                data:
+                - date: 2024-01-01
+                  value: 100
+                - date: 2024-02-01
+                  value: 150
+                data_type: sales
+                periods: 3
+              - identifier: CHURN-RATE
+                data:
+                - date: 2024-01-01
+                  value: 0.041
+                - date: 2024-02-01
+                  value: 0.038
+                periods: 3
+                value_bounds:
+                  min: 0
+                  max: 1
+              frequency: M
+              confidence: 0.8
+              quantiles:
+              - 0.1
+              - 0.5
+              - 0.9
+            schema:
+              $ref: "#/components/schemas/BatchForecastRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchForecastAccepted"
+          description: Accepted — the batch is queued for processing
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationFailedResponse"
+          description: Validation error
+      security:
+      - apiKey: []
+      summary: Submit a batch of series for forecasting
+      tags:
+      - Batch Forecasting
+  /v2/batch/forecast/presign:
+    post:
+      description: |
+        Returns a presigned URL for uploading a JSON file containing the batch request
+        body — an object with a `series` array, the same shape as the inline
+        `/v2/batch/forecast` request. HTTP PUT the file to `upload_url` (including any
+        returned `headers`), then submit the batch by POSTing the returned `file_key` to
+        `/v2/batch/forecast`. The URL is valid for 30 minutes.
+      operationId: presignBatchForecast
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchPresignResponse"
+          description: Presigned upload details
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+      security:
+      - apiKey: []
+      summary: Get a presigned URL for a file-based batch upload
+      tags:
+      - Batch Forecasting
+  /v2/batch/forecast/{batch_id}:
+    get:
+      description: |
+        Returns the batch's status, a summary once it finalises, and each series' results
+        under `results.data` — keyed by **entity id** rather than by your identifier,
+        because one batch may contain the same identifier under several `tenant_context`
+        values. Match series via the `identifier` and `tenant_context` echoed inside each
+        result object.
+      operationId: getBatchForecast
+      parameters:
+      - description: The id returned by POST /v2/batch/forecast
+        explode: false
+        in: path
+        name: batch_id
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchForecastStatusResponse"
+          description: Current status and results of the batch
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/getGroupedForecast_404_response"
+          description: No batch with this id exists for your team
+      security:
+      - apiKey: []
+      summary: Poll a batch forecast for status and results
+      tags:
+      - Batch Forecasting
+  /v2/analyze:
+    post:
+      operationId: analyzeTimeSeries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForecastRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResponse"
+          description: Successful data analysis
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+          description: Validation error
+      security:
+      - apiKey: []
+      summary: Analyze time series data without generating forecast
+      tags:
+      - Analysis
+  /v2/inventory-planning:
+    post:
+      description: |
+        Generate inventory forecasts with supplier recommendations, reorder points, safety stock calculations,
+        and comprehensive stock analysis. This endpoint combines time series forecasting with inventory
+        optimization to provide actionable recommendations for stock management and procurement.
+
+        **Key Features:**
+        - Automatic forecasting method selection based on demand patterns
+        - Multi-supplier cost and lead time optimization
+        - Safety stock calculation with configurable service levels
+        - Reorder point recommendations with minimum order quantity considerations
+        - Stock analysis including stockout risk and days of coverage
+        - Real-time supplier performance evaluation
+      operationId: createInventoryPlan
+      requestBody:
+        content:
+          application/json:
+            examples:
+              basic_planning:
+                description: Simple inventory planning with one supplier
+                summary: Basic inventory planning request
+                value:
+                  identifier: SKU-12345
+                  frequency: M
+                  start_date: 2024-01-01
+                  periods: 6
+                  enable_intelligent_aggregation: true
+                  data:
+                  - date: 2023-01-01
+                    value: 100
+                  - date: 2023-02-01
+                    value: 120
+                  - date: 2023-03-01
+                    value: 95
+                  - date: 2023-04-01
+                    value: 130
+                  - date: 2023-05-01
+                    value: 110
+                  inventory_settings:
+                    current_stock: 250
+                    minimum_stock: 50
+                    service_level: 0.95
+                    suppliers:
+                    - identifier: supplier-a
+                      lead_time_days: 14
+                      minimum_order_quantity: 100
+                      cost_per_unit: 12.5
+                      reliability_score: 0.98
+              multi_supplier:
+                description: Compare multiple suppliers with different costs and lead
+                  times
+                summary: Multi-supplier comparison
+                value:
+                  identifier: SKU-67890
+                  frequency: W
+                  periods: 12
+                  data:
+                  - date: 2023-01-01
+                    value: 45
+                  - date: 2023-01-08
+                    value: 52
+                  - date: 2023-01-15
+                    value: 38
+                  - date: 2023-01-22
+                    value: 67
+                  inventory_settings:
+                    current_stock: 180
+                    minimum_stock: 25
+                    service_level: 0.98
+                    suppliers:
+                    - identifier: fast-supplier
+                      lead_time_days: 5
+                      minimum_order_quantity: 50
+                      cost_per_unit: 15.75
+                      reliability_score: 0.99
+                    - identifier: cheap-supplier
+                      lead_time_days: 21
+                      minimum_order_quantity: 200
+                      cost_per_unit: 11.25
+                      reliability_score: 0.88
+                    - identifier: balanced-supplier
+                      lead_time_days: 12
+                      minimum_order_quantity: 75
+                      cost_per_unit: 13.5
+                      reliability_score: 0.95
+            schema:
+              $ref: "#/components/schemas/InventoryPlanningRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryPlanningResponse"
+          description: Successful inventory planning generation
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createInventoryPlan_400_response"
+          description: Planning failed due to insufficient data or invalid parameters
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+          description: Validation error
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createInventoryPlan_500_response"
+          description: Internal server error during inventory planning
+      security:
+      - apiKey: []
+      summary: Generate comprehensive inventory planning recommendations
+      tags:
+      - Inventory Planning
+  /v2/traffic-forecasting:
+    post:
+      description: |
+        Generate comprehensive traffic forecasts with infrastructure scaling recommendations, capacity analysis,
+        cost optimization, and traffic anomaly alerts. This endpoint is designed for web applications, APIs,
+        and infrastructure teams to predict traffic patterns and optimize resource allocation.
+
+        **Key Features:**
+        - Intelligent traffic pattern forecasting with multiple algorithms
+        - Infrastructure scaling recommendations (scale up/down/maintain)
+        - Real-time capacity utilization analysis
+        - Traffic spike and anomaly detection alerts
+        - Cost optimization recommendations with potential savings
+        - Auto-scaling benefit analysis
+        - Support for various time frequencies (minute, hourly, daily, etc.)
+      operationId: createTrafficForecast
+      requestBody:
+        content:
+          application/json:
+            examples:
+              hourly_traffic:
+                description: Forecast hourly traffic patterns for a web application
+                summary: Hourly web traffic forecasting
+                value:
+                  identifier: api-endpoint-users
+                  frequency: H
+                  start_date: 2024-01-01
+                  periods: 24
+                  enable_intelligent_aggregation: true
+                  data:
+                  - date: 2023-12-01 00:00:00
+                    value: 1200
+                  - date: 2023-12-01 01:00:00
+                    value: 800
+                  - date: 2023-12-01 02:00:00
+                    value: 600
+                  - date: 2023-12-01 03:00:00
+                    value: 500
+                  - date: 2023-12-01 04:00:00
+                    value: 450
+                  traffic_settings:
+                    current_capacity: 2000
+                    baseline_traffic: 1000
+                    scaling_buffer: 0.2
+                    scale_up_threshold: 0.8
+                    scale_down_threshold: 0.3
+                    alert_threshold: 1.5
+                    anomaly_threshold: 3.0
+                    cost_per_unit: 0.01
+                    fixed_cost_per_capacity: 0.1
+                    base_scaling_time: 5
+                    enable_auto_scaling: false
+              daily_api_traffic:
+                description: Forecast daily API traffic with auto-scaling enabled
+                summary: Daily API traffic with auto-scaling
+                value:
+                  identifier: public-api-v2
+                  frequency: D
+                  periods: 30
+                  data:
+                  - date: 2023-11-01
+                    value: 45000
+                  - date: 2023-11-02
+                    value: 52000
+                  - date: 2023-11-03
+                    value: 48000
+                  - date: 2023-11-04
+                    value: 38000
+                  - date: 2023-11-05
+                    value: 35000
+                  traffic_settings:
+                    current_capacity: 60000
+                    baseline_traffic: 40000
+                    enable_auto_scaling: true
+                    cost_per_unit: 0.005
+                    fixed_cost_per_capacity: 0.08
+            schema:
+              $ref: "#/components/schemas/TrafficForecastingRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficForecastingResponse"
+          description: Successful traffic forecasting generation
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createInventoryPlan_400_response"
+          description: Forecasting failed due to insufficient data or invalid parameters
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+          description: Validation error
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createTrafficForecast_500_response"
+          description: Internal server error during traffic forecasting
+      security:
+      - apiKey: []
+      summary: Generate traffic forecasting with infrastructure scaling recommendations
+      tags:
+      - Traffic Forecasting
+  /v2/detect-anomalies:
+    post:
+      description: |
+        Detects anomalies using statistical methods — z-score, IQR or seasonal — and
+        automatically selects the best method for the data's characteristics unless one is
+        named in `anomaly_settings.method`. Returns each anomalous point with its expected
+        range, severity and type, plus an analysis of how the method was chosen.
+      operationId: detectAnomalies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnomalyDetectionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnomalyDetectionResponse"
+          description: Detection results
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/detectAnomalies_422_response"
+          description: |
+            Validation error, or the data is not suitable for the requested detection
+            method (the latter returns `{error, time_taken_ms}`)
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/detectAnomalies_500_response"
+          description: Internal error during detection
+      security:
+      - apiKey: []
+      summary: Detect anomalies in time series data
+      tags:
+      - Anomaly Detection
+  /v2/product-insights:
+    post:
+      description: |
+        Analyzes a product's sales, purchase and cost-history data and returns classified
+        insights — margin compression, sales anomalies, cost changes, lead-time
+        reliability and more — each with severity, the metrics behind it and a
+        recommendation. At least one of `sales`, `purchases` or `cost_history` must be
+        provided. Analyses are stored per product, so repeat calls also return a
+        `comparison` against the previous analysis with a new/changed/resolved breakdown.
+      operationId: createProductInsights
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInsightsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductInsightsResponse"
+          description: Analysis results
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createProductInsights_400_response"
+          description: The analysis could not run on the provided data
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationFailedResponse"
+          description: Validation error
+      security:
+      - apiKey: []
+      summary: "Analyze product performance for anomalies, trends and business insights"
+      tags:
+      - Product Insights
+  /v2/batch/product-insights:
+    post:
+      description: |
+        Analyze up to 1,000 products in one asynchronous batch; each entry is the same
+        shape as a single `/v2/product-insights` request. Returns `202` with the batch
+        resource to poll via `GET /v2/batch/product-insights/{batch_id}`. The optional
+        `batch` and `parts` fields let a large batch be submitted in chunks that share one
+        batch id. Validation is per series: if any entry fails, the whole submission is
+        rejected with the failing entries listed by index.
+      operationId: createBatchProductInsights
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInsightsBatchRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductInsightsBatchStatusResponse"
+          description: Accepted — the batch is queued for analysis
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createBatchProductInsights_422_response"
+          description: One or more series failed validation
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/createBatchProductInsights_500_response"
+          description: Internal error during batch creation
+      security:
+      - apiKey: []
+      summary: Submit a batch of products for insights analysis
+      tags:
+      - Product Insights
+  /v2/batch/product-insights/{batch_id}:
+    get:
+      operationId: getProductInsightsBatch
+      parameters:
+      - description: The batch identifier returned on submission
+        explode: false
+        in: path
+        name: batch_id
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductInsightsBatchStatusResponse"
+          description: Current status and results of the batch
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Unauthorized - Invalid or missing API key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/getGroupedForecast_404_response"
+          description: No batch with this id exists for your team
+      security:
+      - apiKey: []
+      summary: Poll a product insights batch for status and results
+      tags:
+      - Product Insights
+components:
+  schemas:
+    ForecastRequest:
+      example:
+        identifier: SKU-12345
+        value_bounds:
+          min: 0
+          max: 100
+        adjustments:
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        data:
+        - date: 2024-01-01
+          value: 150.5
+        - date: 2024-01-01
+          value: 150.5
+        confidence_level: 0.8
+        frequency: M
+        quantiles:
+        - 0.1
+        - 0.5
+        - 0.9
+        selection_metric: auto
+        data_type: sales
+        periods: 6
+        accumulate:
+          correlation: 0.5
+          decay: 0.95
+          discount_rate: 0.1
+        model: standard
+        tenant_context: plan-pro
+        start_date: 2024-01-01
+      properties:
+        identifier:
+          description: "SKU, Product ID, or other identifier for the data series"
+          example: SKU-12345
+          type: string
+        tenant_context:
+          description: |
+            Optional segmentation dimension. A series is identified by the pair
+            identifier + tenant_context, so "mrr" on "plan-pro" and "mrr" on "plan-free" are
+            two independent series, each with its own history and accuracy tracking. Despite
+            the name it isn't only for multi-tenancy — use it for any slice: plan, region,
+            store, channel, cohort, device type.
+          example: plan-pro
+          nullable: true
+          type: string
+        frequency:
+          description: |
+            Data frequency:
+            - H: Hourly
+            - D: Daily
+            - W: Weekly
+            - M: Monthly (end of month)
+            - MS: Monthly (start of month)
+            - ME: Monthly (end of month)
+            - Q: Quarterly
+            - Y: Yearly
+          enum:
+          - H
+          - D
+          - W
+          - M
+          - MS
+          - ME
+          - Q
+          - "Y"
+          example: M
+          type: string
+        start_date:
+          description: Optional start date for the forecast
+          example: 2024-01-01
+          format: date
+          nullable: true
+          type: string
+        data_type:
+          description: "Type of data (e.g., sales, demand, inventory, web_traffic)"
+          example: sales
+          type: string
+        periods:
+          description: Number of periods to forecast
+          example: 6
+          minimum: 1
+          type: integer
+        model:
+          default: standard
+          description: |
+            Which forecasting engine to use. The advanced variants and ensemble provide
+            higher accuracy at a higher usage cost than standard.
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          example: standard
+          type: string
+        confidence_level:
+          default: 0.8
+          description: |
+            Confidence level for the prediction interval. Note that 0.80 is the widest band
+            the foundation models (advanced-quantized, advanced-patched, ensemble) produce
+            natively — for genuinely distinct levels beyond that, request a quantile fan via
+            `quantiles` instead of repeating the call at several confidence levels.
+          example: 0.8
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        quantiles:
+          description: |
+            Decile levels to return per period — only deciles between 0.1 and 0.9 are
+            accepted, because those are the levels every backend produces natively; anything
+            finer would be interpolation served under a label the model never predicted.
+            Adds a `quantiles` object to each forecast row alongside the usual bounds.
+            Honoured by /v2/forecast and /v2/batch/forecast (request-level default or
+            per-series override); rejected on grouped forecasts; ignored by other endpoints
+            sharing this request shape.
+          example:
+          - 0.1
+          - 0.5
+          - 0.9
+          items:
+            enum:
+            - 0.1
+            - 0.2
+            - 0.3
+            - 0.4
+            - 0.5
+            - 0.6
+            - 0.7
+            - 0.8
+            - 0.9
+            type: number
+          maxItems: 9
+          minItems: 1
+          type: array
+        value_bounds:
+          $ref: "#/components/schemas/ValueBounds"
+        adjustments:
+          description: |
+            What-if scenario applied on top of the forecast ("assume we lose the enterprise
+            deal"). Adjustments compose in array order — ×2 then +50 is not +50 then ×2.
+            Each one moves the point, both bounds and any quantile fan together. Returns an
+            `adjusted` block; the adjusted path is never stored or accuracy-tracked. Honoured
+            by /v2/forecast and /v2/batch/forecast (request-level default or per-series
+            override — period windows are checked against each series' own horizon); rejected
+            on grouped forecasts; ignored by other endpoints sharing this request shape.
+          items:
+            $ref: "#/components/schemas/Adjustments_inner"
+          maxItems: 20
+          minItems: 1
+          type: array
+        accumulate:
+          $ref: "#/components/schemas/AccumulateOptions"
+        selection_metric:
+          description: |
+            Which back-testing error metric decides the winning model when candidates are compared:
+            - auto: combined for demand/sales/inventory, sMAPE otherwise (default)
+            - combined: 0.6·MASE + 0.4·sMAPE — balances accuracy and trend capture
+            - mase: Mean Absolute Scaled Error — accuracy relative to a naive forecast
+            - smape: Symmetric Mean Absolute Percentage Error
+          enum:
+          - auto
+          - combined
+          - mase
+          - smape
+          example: auto
+          nullable: true
+          type: string
+        data:
+          description: Historical time series data
+          items:
+            $ref: "#/components/schemas/ForecastRequest_data_inner"
+          minItems: 1
+          type: array
+      required:
+      - data
+      - data_type
+      - frequency
+      - identifier
+      - periods
+      type: object
+    QuantilesParameter:
+      description: |
+        Decile levels to return per period — only deciles between 0.1 and 0.9 are
+        accepted, because those are the levels every backend produces natively; anything
+        finer would be interpolation served under a label the model never predicted.
+        Adds a `quantiles` object to each forecast row alongside the usual bounds.
+        Honoured by /v2/forecast and /v2/batch/forecast (request-level default or
+        per-series override); rejected on grouped forecasts; ignored by other endpoints
+        sharing this request shape.
+      example:
+      - 0.1
+      - 0.5
+      - 0.9
+      items:
+        enum:
+        - 0.1
+        - 0.2
+        - 0.3
+        - 0.4
+        - 0.5
+        - 0.6
+        - 0.7
+        - 0.8
+        - 0.9
+        type: number
+      maxItems: 9
+      minItems: 1
+      type: array
+    ValueBounds:
+      description: |
+        The range the series cannot leave — a rate has both sides, a backlog only a
+        floor. At least one side must be declared, and min must be less than max. The
+        series is forecast on a transformed scale and mapped back, so the point, both
+        bounds and every quantile land inside the range and the band takes the right
+        asymmetric shape near a bound. Checked against the series' own history: bounds the
+        history already contradicts are rejected up front (usually a unit mismatch, e.g.
+        0–1 rates declared as 0–100). Honoured by /v2/forecast and /v2/batch/forecast
+        (request-level default or per-series override); rejected on grouped forecasts;
+        ignored by other endpoints sharing this request shape.
+      example:
+        min: 0
+        max: 100
+      properties:
+        min:
+          description: Floor the series cannot go below
+          example: 0
+          nullable: true
+          type: number
+        max:
+          description: Ceiling the series cannot exceed
+          example: 100
+          nullable: true
+          type: number
+      type: object
+    Adjustments:
+      description: |
+        What-if scenario applied on top of the forecast ("assume we lose the enterprise
+        deal"). Adjustments compose in array order — ×2 then +50 is not +50 then ×2.
+        Each one moves the point, both bounds and any quantile fan together. Returns an
+        `adjusted` block; the adjusted path is never stored or accuracy-tracked. Honoured
+        by /v2/forecast and /v2/batch/forecast (request-level default or per-series
+        override — period windows are checked against each series' own horizon); rejected
+        on grouped forecasts; ignored by other endpoints sharing this request shape.
+      items:
+        $ref: "#/components/schemas/Adjustments_inner"
+      maxItems: 20
+      minItems: 1
+      type: array
+    AccumulateOptions:
+      description: |
+        Collapse the forecast path into a cumulative total — Σ (value × survival ×
+        discount). The same operation covers cumulative demand over a lead time (safety
+        stock), customer lifetime value, TCO and NPV. Returns an `accumulated` block.
+        Honoured by /v2/forecast and /v2/batch/forecast (request-level default or
+        per-series override); rejected on grouped forecasts; ignored by other endpoints
+        sharing this request shape.
+      example:
+        correlation: 0.5
+        decay: 0.95
+        discount_rate: 0.1
+      properties:
+        decay:
+          default: 1.0
+          description: Per-period survival factor — 0.95 means 5% attrition each period
+          example: 0.95
+          maximum: 1
+          minimum: 0
+          type: number
+        discount_rate:
+          default: 0
+          description: "Annual discount rate, converted to the series frequency (a\
+            \ 10% annual rate on monthly periods discounts period 2 by 1.10^(-1/12),\
+            \ not by 1.10)"
+          example: 0.1
+          maximum: 1
+          minimum: 0
+          type: number
+        correlation:
+          default: 0.5
+          description: |
+            How correlated the per-period errors are assumed to be; controls only the
+            width of the total's band. 0 = independent periods (measurably too narrow),
+            1 = sum of the bounds (conservative envelope). The default 0.5 was measured
+            across the benchmark suite; a value you supply is your assumption and is
+            never labelled measured.
+          example: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+      type: object
+    BatchForecastRequest:
+      description: |
+        Either `series` (inline) or `file_key` (file-based, from /v2/batch/forecast/presign)
+        is required. Every other field is a request-level default that each series inherits
+        unless it declares its own override — except `model`, which is request-level only.
+        `confidence_level` is accepted as an alias for `confidence`; if both are sent,
+        `confidence` wins.
+      example:
+        quantiles:
+        - 0.1
+        - 0.5
+        - 0.9
+        file_key: batch-uploads/123/2f1f9c2e-6d0f-4a3e-9d55-0c6a70c1a111.json
+        value_bounds:
+          min: 0
+          max: 100
+        adjustments:
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        series:
+        - quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
+          identifier: SKU-001
+          value_bounds:
+            min: 0
+            max: 100
+          adjustments:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          data:
+          - date: 2024-01-01
+            value: 100
+          - date: 2024-01-01
+            value: 100
+          confidence: 0.6364436002932659
+          confidence_level: 0.23045735526476213
+          data_type: data_type
+          periods: 30
+          accumulate:
+            correlation: 0.5
+            decay: 0.95
+            discount_rate: 0.1
+          tenant_context: plan-pro
+          frequency: H
+        - quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
+          identifier: SKU-001
+          value_bounds:
+            min: 0
+            max: 100
+          adjustments:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          data:
+          - date: 2024-01-01
+            value: 100
+          - date: 2024-01-01
+            value: 100
+          confidence: 0.6364436002932659
+          confidence_level: 0.23045735526476213
+          data_type: data_type
+          periods: 30
+          accumulate:
+            correlation: 0.5
+            decay: 0.95
+            discount_rate: 0.1
+          tenant_context: plan-pro
+          frequency: H
+        - quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
+          identifier: SKU-001
+          value_bounds:
+            min: 0
+            max: 100
+          adjustments:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          data:
+          - date: 2024-01-01
+            value: 100
+          - date: 2024-01-01
+            value: 100
+          confidence: 0.6364436002932659
+          confidence_level: 0.23045735526476213
+          data_type: data_type
+          periods: 30
+          accumulate:
+            correlation: 0.5
+            decay: 0.95
+            discount_rate: 0.1
+          tenant_context: plan-pro
+          frequency: H
+        - quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
+          identifier: SKU-001
+          value_bounds:
+            min: 0
+            max: 100
+          adjustments:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          data:
+          - date: 2024-01-01
+            value: 100
+          - date: 2024-01-01
+            value: 100
+          confidence: 0.6364436002932659
+          confidence_level: 0.23045735526476213
+          data_type: data_type
+          periods: 30
+          accumulate:
+            correlation: 0.5
+            decay: 0.95
+            discount_rate: 0.1
+          tenant_context: plan-pro
+          frequency: H
+        - quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
+          identifier: SKU-001
+          value_bounds:
+            min: 0
+            max: 100
+          adjustments:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 9
+          data:
+          - date: 2024-01-01
+            value: 100
+          - date: 2024-01-01
+            value: 100
+          confidence: 0.6364436002932659
+          confidence_level: 0.23045735526476213
+          data_type: data_type
+          periods: 30
+          accumulate:
+            correlation: 0.5
+            decay: 0.95
+            discount_rate: 0.1
+          tenant_context: plan-pro
+          frequency: H
+        confidence: 0.6017265224403662
+        confidence_level: 0.30489009393719413
+        data_type: sales
+        periods: 218
+        accumulate:
+          correlation: 0.5
+          decay: 0.95
+          discount_rate: 0.1
+        model: standard
+        frequency: M
+      properties:
+        series:
+          description: "The series to forecast — up to 100,000 per call on a paid\
+            \ plan, 10 on the free tier"
+          items:
+            $ref: "#/components/schemas/BatchForecastSeries"
+          maxItems: 100000
+          minItems: 1
+          type: array
+        file_key:
+          description: |
+            Instead of inline `series` — the key returned by /v2/batch/forecast/presign,
+            after uploading a JSON file of the same shape as this request body (an object
+            with a `series` array). Series from a file are validated as they are streamed:
+            an invalid series fails that series, not the whole batch.
+          example: batch-uploads/123/2f1f9c2e-6d0f-4a3e-9d55-0c6a70c1a111.json
+          type: string
+        periods:
+          default: 6
+          description: Default forecast horizon for series that don't set their own
+          maximum: 365
+          minimum: 1
+          type: integer
+        frequency:
+          description: Default data frequency
+          enum:
+          - H
+          - D
+          - W
+          - M
+          - MS
+          - ME
+          - Q
+          - "Y"
+          example: M
+          type: string
+        data_type:
+          description: Default data type
+          example: sales
+          maxLength: 50
+          type: string
+        model:
+          default: standard
+          description: Forecasting engine for the whole batch (request-level only)
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          type: string
+        confidence:
+          default: 0.8
+          description: Default confidence level for prediction intervals
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        confidence_level:
+          description: Alias for `confidence`
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        quantiles:
+          description: |
+            Decile levels to return per period — only deciles between 0.1 and 0.9 are
+            accepted, because those are the levels every backend produces natively; anything
+            finer would be interpolation served under a label the model never predicted.
+            Adds a `quantiles` object to each forecast row alongside the usual bounds.
+            Honoured by /v2/forecast and /v2/batch/forecast (request-level default or
+            per-series override); rejected on grouped forecasts; ignored by other endpoints
+            sharing this request shape.
+          example:
+          - 0.1
+          - 0.5
+          - 0.9
+          items:
+            enum:
+            - 0.1
+            - 0.2
+            - 0.3
+            - 0.4
+            - 0.5
+            - 0.6
+            - 0.7
+            - 0.8
+            - 0.9
+            type: number
+          maxItems: 9
+          minItems: 1
+          type: array
+        value_bounds:
+          $ref: "#/components/schemas/ValueBounds"
+        adjustments:
+          description: |
+            What-if scenario applied on top of the forecast ("assume we lose the enterprise
+            deal"). Adjustments compose in array order — ×2 then +50 is not +50 then ×2.
+            Each one moves the point, both bounds and any quantile fan together. Returns an
+            `adjusted` block; the adjusted path is never stored or accuracy-tracked. Honoured
+            by /v2/forecast and /v2/batch/forecast (request-level default or per-series
+            override — period windows are checked against each series' own horizon); rejected
+            on grouped forecasts; ignored by other endpoints sharing this request shape.
+          items:
+            $ref: "#/components/schemas/Adjustments_inner"
+          maxItems: 20
+          minItems: 1
+          type: array
+        accumulate:
+          $ref: "#/components/schemas/AccumulateOptions"
+      type: object
+    BatchForecastSeries:
+      example:
+        quantiles:
+        - 0.1
+        - 0.5
+        - 0.9
+        identifier: SKU-001
+        value_bounds:
+          min: 0
+          max: 100
+        adjustments:
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        data:
+        - date: 2024-01-01
+          value: 100
+        - date: 2024-01-01
+          value: 100
+        confidence: 0.6364436002932659
+        confidence_level: 0.23045735526476213
+        data_type: data_type
+        periods: 30
+        accumulate:
+          correlation: 0.5
+          decay: 0.95
+          discount_rate: 0.1
+        tenant_context: plan-pro
+        frequency: H
+      properties:
+        identifier:
+          description: "SKU, Product ID, or other identifier for this series"
+          example: SKU-001
+          type: string
+        tenant_context:
+          description: Optional segmentation dimension — the same identifier may appear
+            under several tenant_context values in one batch
+          example: plan-pro
+          nullable: true
+          type: string
+        data:
+          description: "Historical data for this series (at most 1,000 points per\
+            \ series on the free tier)"
+          items:
+            $ref: "#/components/schemas/BatchForecastSeries_data_inner"
+          minItems: 2
+          type: array
+        periods:
+          description: Override of the request-level horizon for this series
+          maximum: 365
+          minimum: 1
+          type: integer
+        frequency:
+          description: Override of the request-level frequency
+          enum:
+          - H
+          - D
+          - W
+          - M
+          - MS
+          - ME
+          - Q
+          - "Y"
+          type: string
+        data_type:
+          description: Override of the request-level data type
+          maxLength: 50
+          type: string
+        confidence:
+          description: Override of the request-level confidence
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        confidence_level:
+          description: Alias for `confidence`
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        quantiles:
+          description: |
+            Decile levels to return per period — only deciles between 0.1 and 0.9 are
+            accepted, because those are the levels every backend produces natively; anything
+            finer would be interpolation served under a label the model never predicted.
+            Adds a `quantiles` object to each forecast row alongside the usual bounds.
+            Honoured by /v2/forecast and /v2/batch/forecast (request-level default or
+            per-series override); rejected on grouped forecasts; ignored by other endpoints
+            sharing this request shape.
+          example:
+          - 0.1
+          - 0.5
+          - 0.9
+          items:
+            enum:
+            - 0.1
+            - 0.2
+            - 0.3
+            - 0.4
+            - 0.5
+            - 0.6
+            - 0.7
+            - 0.8
+            - 0.9
+            type: number
+          maxItems: 9
+          minItems: 1
+          type: array
+        value_bounds:
+          $ref: "#/components/schemas/ValueBounds"
+        adjustments:
+          description: |
+            What-if scenario applied on top of the forecast ("assume we lose the enterprise
+            deal"). Adjustments compose in array order — ×2 then +50 is not +50 then ×2.
+            Each one moves the point, both bounds and any quantile fan together. Returns an
+            `adjusted` block; the adjusted path is never stored or accuracy-tracked. Honoured
+            by /v2/forecast and /v2/batch/forecast (request-level default or per-series
+            override — period windows are checked against each series' own horizon); rejected
+            on grouped forecasts; ignored by other endpoints sharing this request shape.
+          items:
+            $ref: "#/components/schemas/Adjustments_inner"
+          maxItems: 20
+          minItems: 1
+          type: array
+        accumulate:
+          $ref: "#/components/schemas/AccumulateOptions"
+      required:
+      - data
+      - identifier
+      type: object
+    BatchForecastAccepted:
+      example:
+        series_count: 250
+        batch_id: 9d2c1b34-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        time_taken_ms: 84.2
+        status: pending
+      properties:
+        batch_id:
+          description: "Id to poll via GET /v2/batch/forecast/{batch_id}"
+          example: 9d2c1b34-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+          type: string
+        status:
+          example: pending
+          type: string
+        series_count:
+          description: Number of series accepted. Present on inline submissions; a
+            file-based submission counts its series during processing.
+          example: 250
+          type: integer
+        time_taken_ms:
+          example: 84.2
+          type: number
+      type: object
+    BatchPresignResponse:
+      example:
+        headers:
+          key: headers
+        file_key: batch-uploads/123/2f1f9c2e-6d0f-4a3e-9d55-0c6a70c1a111.json
+        upload_url: https://storage.example.com/batch-uploads/123/2f1f9c2e.json?signature=...
+        expires_in: 1800
+      properties:
+        upload_url:
+          description: "Presigned URL — HTTP PUT the JSON file here, including any\
+            \ returned headers"
+          example: https://storage.example.com/batch-uploads/123/2f1f9c2e.json?signature=...
+          type: string
+        headers:
+          additionalProperties:
+            type: string
+          description: Headers that must be sent with the upload request
+          type: object
+        file_key:
+          description: Pass this as `file_key` to POST /v2/batch/forecast after uploading
+          example: batch-uploads/123/2f1f9c2e-6d0f-4a3e-9d55-0c6a70c1a111.json
+          type: string
+        expires_in:
+          description: Seconds the upload URL stays valid
+          example: 1800
+          type: integer
+      type: object
+    BatchSeriesResult:
+      additionalProperties: true
+      description: |
+        One series' results — the same object a single forecast returns under `result`
+        (identifier, tenant_context, forecasts, model_info). Unlike single forecasts,
+        `adjusted` and `accumulated` live INSIDE this object, next to `forecasts` — a batch
+        flattens each series into `results.data[entity_id]`, so there is no sibling level.
+        For a failed series the object is `{"error": "...", "reason": "..."}` instead; null
+        while the series is still pending.
+      example:
+        identifier: SKU-001
+        tenant_context: null
+        forecasts:
+        - period: 1
+          date: 2024-04-01
+          forecast: 168.5
+          lower: 162.3
+          upper: 174.7
+      nullable: true
+      properties:
+        identifier:
+          example: SKU-001
+          type: string
+        tenant_context:
+          nullable: true
+          type: string
+        forecasts:
+          items:
+            $ref: "#/components/schemas/ForecastPeriod"
+          type: array
+        model_info:
+          additionalProperties: true
+          type: object
+        adjusted:
+          $ref: "#/components/schemas/AdjustedForecast"
+        accumulated:
+          $ref: "#/components/schemas/AccumulatedForecast"
+        error:
+          description: Present instead of forecasts when this series failed
+          type: string
+      type: object
+    BatchForecastStatusResponse:
+      example:
+        identifier: 9d2c1b34-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        completed_at: 2000-01-23T04:56:07.000+00:00
+        updated_at: 2000-01-23T04:56:07.000+00:00
+        batch_parts: 1
+        parts:
+        - completed_at: 2000-01-23T04:56:07.000+00:00
+          started_at: 2000-01-23T04:56:07.000+00:00
+          status: pending
+        - completed_at: 2000-01-23T04:56:07.000+00:00
+          started_at: 2000-01-23T04:56:07.000+00:00
+          status: pending
+        started_at: 2000-01-23T04:56:07.000+00:00
+        created_at: 2000-01-23T04:56:07.000+00:00
+        results:
+          summary:
+            model_distribution:
+              standard: 250
+            total_processing_time_ms: 512340.0
+            completed: 248
+            failed: 2
+            avg_processing_time_ms: 2049.4
+            total_series: 250
+            error: error
+          data:
+            key:
+              identifier: SKU-001
+              tenant_context: null
+              forecasts:
+              - period: 1
+                date: 2024-04-01
+                forecast: 168.5
+                lower: 162.3
+                upper: 174.7
+        status: completed
+      properties:
+        identifier:
+          description: The batch id
+          example: 9d2c1b34-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+          type: string
+        status:
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+          example: completed
+          type: string
+        batch_parts:
+          description: Number of parts the batch was split into for processing
+          example: 1
+          nullable: true
+          type: integer
+        results:
+          $ref: "#/components/schemas/BatchForecastStatusResponse_results"
+        parts:
+          description: Per-part progress metadata (the forecasts themselves live under
+            results.data)
+          items:
+            $ref: "#/components/schemas/BatchForecastStatusResponse_parts_inner"
+          type: array
+        started_at:
+          format: date-time
+          nullable: true
+          type: string
+        completed_at:
+          format: date-time
+          nullable: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      type: object
+    AnomalyDetectionRequest:
+      allOf:
+      - $ref: "#/components/schemas/ForecastRequest"
+      - properties:
+          anomaly_settings:
+            $ref: "#/components/schemas/AnomalyDetectionRequest_allOf_anomaly_settings"
+        type: object
+      example:
+        identifier: SKU-12345
+        value_bounds:
+          min: 0
+          max: 100
+        adjustments:
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 9
+        data:
+        - date: 2024-01-01
+          value: 150.5
+        - date: 2024-01-01
+          value: 150.5
+        confidence_level: 0.8
+        frequency: M
+        quantiles:
+        - 0.1
+        - 0.5
+        - 0.9
+        selection_metric: auto
+        anomaly_settings:
+          method: auto
+          multiplier: 3.212355282381681
+          threshold: 0.8603726857074552
+          minimum_periods: 60
+          seasonal_period: 55
+        data_type: sales
+        periods: 6
+        accumulate:
+          correlation: 0.5
+          decay: 0.95
+          discount_rate: 0.1
+        model: standard
+        tenant_context: plan-pro
+        start_date: 2024-01-01
+    AnomalyDetectionResponse:
+      example:
+        result:
+          interpretation:
+            key: ""
+          alternatives:
+          - key: ""
+          - key: ""
+          analysis:
+            reason: Regular pattern with stable variance suits z-score detection
+            confidence: high
+            data_characteristics:
+              key: ""
+            method_used: zscore
+            detection_summary:
+              anomaly_percentage: 5.56
+              total_points: 36
+              anomalies_found: 2
+              severity_distribution:
+                key: 0
+          anomalies:
+          - date: 2024-03-15
+            severity: high
+            index: 14
+            expected_range:
+              key: ""
+            type: spike
+            value: 940
+          - date: 2024-03-15
+            severity: high
+            index: 14
+            expected_range:
+              key: ""
+            type: spike
+            value: 940
+          statistics:
+            key: ""
+        meta:
+          timing:
+            detection: 42.7
+            total: 50.8
+            validation: 8.1
+      properties:
+        result:
+          $ref: "#/components/schemas/AnomalyDetectionResponse_result"
+        meta:
+          $ref: "#/components/schemas/AnomalyDetectionResponse_meta"
+      type: object
+    ProductInsightsRequest:
+      description: "At least one of `sales`, `purchases` or `cost_history` must be\
+        \ provided."
+      example:
+        product_group_id: product_group_id
+        base_currency: USD
+        identifier: SKU-12345
+        purchases:
+        - date: 2024-02-20
+          cost_price_converted: 0.6027456183070403
+          expected_delivery_date: 2000-01-23
+          currency: currency
+          actual_delivery_date: 2000-01-23
+          supplier_id: supplier_id
+          purchase_order_date: 2000-01-23
+          quantity_purchased: 100
+          cost_price: 10.4
+        - date: 2024-02-20
+          cost_price_converted: 0.6027456183070403
+          expected_delivery_date: 2000-01-23
+          currency: currency
+          actual_delivery_date: 2000-01-23
+          supplier_id: supplier_id
+          purchase_order_date: 2000-01-23
+          quantity_purchased: 100
+          cost_price: 10.4
+        insight_settings:
+          enable_seasonality_detection: true
+          purchase_threshold: 1.1895572640327088
+          margin_threshold: 0.600251257751635
+          severity_levels:
+          - critical
+          - critical
+          cost_threshold: 0.5681002890066995
+          sales_threshold: 0.7755774253489579
+        baseline_period_days: auto
+        locale: en
+        product_name: Wireless Mouse
+        sales:
+        - date: 2024-03-01
+          quantity_sold: 12
+          selling_price: 24.95
+          selling_price_converted: 0.08008281904610115
+          currency: currency
+          customer_id: customer_id
+          customer_segment: customer_segment
+        - date: 2024-03-01
+          quantity_sold: 12
+          selling_price: 24.95
+          selling_price_converted: 0.08008281904610115
+          currency: currency
+          customer_id: customer_id
+          customer_segment: customer_segment
+        cost_history:
+        - date: 2024-01-01
+          change_reason: change_reason
+          currency: currency
+          cost_price: 9.8
+        - date: 2024-01-01
+          change_reason: change_reason
+          currency: currency
+          cost_price: 9.8
+        tenant_context: tenant_context
+      properties:
+        identifier:
+          description: Product identifier
+          example: SKU-12345
+          maxLength: 255
+          type: string
+        tenant_context:
+          maxLength: 255
+          nullable: true
+          type: string
+        product_name:
+          example: Wireless Mouse
+          maxLength: 500
+          nullable: true
+          type: string
+        product_group_id:
+          maxLength: 255
+          nullable: true
+          type: string
+        base_currency:
+          description: ISO 4217 currency the analysis reports in
+          example: USD
+          maxLength: 3
+          minLength: 3
+          nullable: true
+          type: string
+        baseline_period_days:
+          $ref: "#/components/schemas/ProductInsightsRequest_baseline_period_days"
+        locale:
+          default: en
+          description: Locale for insight texts
+          type: string
+        sales:
+          items:
+            $ref: "#/components/schemas/ProductInsightsRequest_sales_inner"
+          nullable: true
+          type: array
+        purchases:
+          items:
+            $ref: "#/components/schemas/ProductInsightsRequest_purchases_inner"
+          nullable: true
+          type: array
+        cost_history:
+          items:
+            $ref: "#/components/schemas/ProductInsightsRequest_cost_history_inner"
+          nullable: true
+          type: array
+        insight_settings:
+          $ref: "#/components/schemas/ProductInsightsRequest_insight_settings"
+      required:
+      - identifier
+      type: object
+    ProductInsight:
+      example:
+        severity: warning
+        date: 2024-03-05
+        confidence: medium
+        description: description
+        recommendation:
+          action: review_pricing
+          description: description
+          priority: high
+        metrics:
+          key: ""
+        change_status: new
+        type: margin_compression
+        title: Margin dropped 8.2% versus baseline
+        class: margin
+      properties:
+        class:
+          description: "Insight family (e.g. margin, sales, cost, lead_time)"
+          example: margin
+          type: string
+        type:
+          example: margin_compression
+          type: string
+        severity:
+          enum:
+          - critical
+          - warning
+          - info
+          example: warning
+          type: string
+        title:
+          example: Margin dropped 8.2% versus baseline
+          type: string
+        description:
+          type: string
+        metrics:
+          additionalProperties: true
+          description: The numbers behind the insight
+          type: object
+        recommendation:
+          $ref: "#/components/schemas/ProductInsight_recommendation"
+        confidence:
+          example: medium
+          type: string
+        date:
+          example: 2024-03-05
+          type: string
+        change_status:
+          description: How this insight compares to the previous analysis of the same
+            product — every insight is "new" on the first analysis
+          example: new
+          type: string
+      type: object
+    ProductInsightsResponse:
+      example:
+        result:
+          base_currency: USD
+          summary:
+            total_insights: 1
+            data_sources_analyzed:
+            - sales
+            - purchases
+            - cost_history
+            categories:
+            - profitability
+            analysis_period:
+              end_date: end_date
+              start_date: start_date
+              total_days: 0
+            severity_distribution:
+              critical: 0
+              warning: 1
+              info: 0
+          identifier: SKU-12345
+          comparison:
+            result:
+              key: ""
+            developments:
+              summary: summary
+              new:
+              - key: ""
+              - key: ""
+              unchanged_count: 6
+              changed:
+              - key: ""
+              - key: ""
+              resolved:
+              - key: ""
+              - key: ""
+            from: 2000-01-23T04:56:07.000+00:00
+            to: 2000-01-23T04:56:07.000+00:00
+          insights:
+          - severity: warning
+            date: 2024-03-05
+            confidence: medium
+            description: description
+            recommendation:
+              action: review_pricing
+              description: description
+              priority: high
+            metrics:
+              key: ""
+            change_status: new
+            type: margin_compression
+            title: Margin dropped 8.2% versus baseline
+            class: margin
+          - severity: warning
+            date: 2024-03-05
+            confidence: medium
+            description: description
+            recommendation:
+              action: review_pricing
+              description: description
+              priority: high
+            metrics:
+              key: ""
+            change_status: new
+            type: margin_compression
+            title: Margin dropped 8.2% versus baseline
+            class: margin
+          product_info:
+            group_id: group_id
+            name: name
+          tenant_context: tenant_context
+        meta:
+          timing:
+            total: 151.9
+            analysis: 148.7
+            validation: 2.1
+          data_quality:
+            total_data_points: 6
+            datasets_provided:
+            - sales
+            - purchases
+            - cost_history
+      properties:
+        result:
+          $ref: "#/components/schemas/ProductInsightsResponse_result"
+        meta:
+          $ref: "#/components/schemas/ProductInsightsResponse_meta"
+      type: object
+    ProductInsightsBatchRequest:
+      example:
+        series:
+        - product_group_id: product_group_id
+          base_currency: USD
+          identifier: SKU-12345
+          purchases:
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          insight_settings:
+            enable_seasonality_detection: true
+            purchase_threshold: 1.1895572640327088
+            margin_threshold: 0.600251257751635
+            severity_levels:
+            - critical
+            - critical
+            cost_threshold: 0.5681002890066995
+            sales_threshold: 0.7755774253489579
+          baseline_period_days: auto
+          locale: en
+          product_name: Wireless Mouse
+          sales:
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          cost_history:
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          tenant_context: tenant_context
+        - product_group_id: product_group_id
+          base_currency: USD
+          identifier: SKU-12345
+          purchases:
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          insight_settings:
+            enable_seasonality_detection: true
+            purchase_threshold: 1.1895572640327088
+            margin_threshold: 0.600251257751635
+            severity_levels:
+            - critical
+            - critical
+            cost_threshold: 0.5681002890066995
+            sales_threshold: 0.7755774253489579
+          baseline_period_days: auto
+          locale: en
+          product_name: Wireless Mouse
+          sales:
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          cost_history:
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          tenant_context: tenant_context
+        - product_group_id: product_group_id
+          base_currency: USD
+          identifier: SKU-12345
+          purchases:
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          insight_settings:
+            enable_seasonality_detection: true
+            purchase_threshold: 1.1895572640327088
+            margin_threshold: 0.600251257751635
+            severity_levels:
+            - critical
+            - critical
+            cost_threshold: 0.5681002890066995
+            sales_threshold: 0.7755774253489579
+          baseline_period_days: auto
+          locale: en
+          product_name: Wireless Mouse
+          sales:
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          cost_history:
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          tenant_context: tenant_context
+        - product_group_id: product_group_id
+          base_currency: USD
+          identifier: SKU-12345
+          purchases:
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          insight_settings:
+            enable_seasonality_detection: true
+            purchase_threshold: 1.1895572640327088
+            margin_threshold: 0.600251257751635
+            severity_levels:
+            - critical
+            - critical
+            cost_threshold: 0.5681002890066995
+            sales_threshold: 0.7755774253489579
+          baseline_period_days: auto
+          locale: en
+          product_name: Wireless Mouse
+          sales:
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          cost_history:
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          tenant_context: tenant_context
+        - product_group_id: product_group_id
+          base_currency: USD
+          identifier: SKU-12345
+          purchases:
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          - date: 2024-02-20
+            cost_price_converted: 0.6027456183070403
+            expected_delivery_date: 2000-01-23
+            currency: currency
+            actual_delivery_date: 2000-01-23
+            supplier_id: supplier_id
+            purchase_order_date: 2000-01-23
+            quantity_purchased: 100
+            cost_price: 10.4
+          insight_settings:
+            enable_seasonality_detection: true
+            purchase_threshold: 1.1895572640327088
+            margin_threshold: 0.600251257751635
+            severity_levels:
+            - critical
+            - critical
+            cost_threshold: 0.5681002890066995
+            sales_threshold: 0.7755774253489579
+          baseline_period_days: auto
+          locale: en
+          product_name: Wireless Mouse
+          sales:
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          - date: 2024-03-01
+            quantity_sold: 12
+            selling_price: 24.95
+            selling_price_converted: 0.08008281904610115
+            currency: currency
+            customer_id: customer_id
+            customer_segment: customer_segment
+          cost_history:
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          - date: 2024-01-01
+            change_reason: change_reason
+            currency: currency
+            cost_price: 9.8
+          tenant_context: tenant_context
+        batch: batch
+        parts: 0
+      properties:
+        series:
+          description: "One entry per product, each the same shape as a single /v2/product-insights\
+            \ request"
+          items:
+            $ref: "#/components/schemas/ProductInsightsRequest"
+          maxItems: 1000
+          minItems: 1
+          type: array
+        batch:
+          description: "Existing batch identifier to append this upload to, for submitting\
+            \ one logical batch in chunks"
+          type: string
+        parts:
+          description: "Total number of parts the batch will consist of, when submitting\
+            \ in chunks"
+          type: integer
+      required:
+      - series
+      type: object
+    ProductInsightsBatchStatusResponse:
+      example:
+        identifier: 7f3e2a91-1c4d-4b6a-9e8f-5a6b7c8d9e0f
+        completed_at: 2000-01-23T04:56:07.000+00:00
+        updated_at: 2000-01-23T04:56:07.000+00:00
+        batch_parts: 1
+        parts:
+        - key: ""
+        - key: ""
+        started_at: 2000-01-23T04:56:07.000+00:00
+        created_at: 2000-01-23T04:56:07.000+00:00
+        results:
+          key: ""
+        status: processing
+      properties:
+        identifier:
+          description: The batch id
+          example: 7f3e2a91-1c4d-4b6a-9e8f-5a6b7c8d9e0f
+          type: string
+        status:
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+          example: processing
+          type: string
+        batch_parts:
+          example: 1
+          nullable: true
+          type: integer
+        results:
+          additionalProperties: true
+          description: Summary and per-product analysis results as parts complete
+          nullable: true
+          type: object
+        parts:
+          description: "Per-part progress, each carrying its analyses once processed"
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+        started_at:
+          format: date-time
+          nullable: true
+          type: string
+        completed_at:
+          format: date-time
+          nullable: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      type: object
+    ForecastPeriod:
+      example:
+        date: 2024-04-01
+        quantiles:
+          "0.1": 151.2
+          "0.5": 168.5
+          "0.9": 186.0
+        period: 1
+        lower: 162.3
+        upper: 174.7
+        forecast: 168.5
+      properties:
+        period:
+          description: 1-based forecast period number
+          example: 1
+          type: integer
+        date:
+          description: Date of this forecast period
+          example: 2024-04-01
+          format: date
+          type: string
+        forecast:
+          description: Point forecast for this period
+          example: 168.5
+          type: number
+        lower:
+          description: Lower prediction bound at the requested confidence level
+          example: 162.3
+          type: number
+        upper:
+          description: Upper prediction bound at the requested confidence level
+          example: 174.7
+          type: number
+        quantiles:
+          additionalProperties:
+            type: number
+          description: Present only when `quantiles` was requested — the forecast
+            at each requested decile level for this period
+          example:
+            "0.1": 151.2
+            "0.5": 168.5
+            "0.9": 186.0
+          type: object
+      type: object
+    ForecastResponse:
+      example:
+        result:
+          identifier: SKU-12345
+          model_info:
+            key: ""
+          tenant_context: tenant_context
+          forecasts:
+          - date: 2024-04-01
+            quantiles:
+              "0.1": 151.2
+              "0.5": 168.5
+              "0.9": 186.0
+            period: 1
+            lower: 162.3
+            upper: 174.7
+            forecast: 168.5
+          - date: 2024-04-01
+            quantiles:
+              "0.1": 151.2
+              "0.5": 168.5
+              "0.9": 186.0
+            period: 1
+            lower: 162.3
+            upper: 174.7
+            forecast: 168.5
+        meta:
+          selection_metric: smape
+          timing:
+            total: 125.6
+            selection: 45.3
+            forecasting: 67.8
+            validation: 12.5
+        adjusted:
+          stored: false
+          adjustments_applied:
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 6
+            periods_affected: 4
+          - from_period: 3
+            type: multiplier
+            value: 0.8
+            to_period: 6
+            periods_affected: 4
+          forecasts:
+          - date: 2024-04-01
+            quantiles:
+              "0.1": 151.2
+              "0.5": 168.5
+              "0.9": 186.0
+            period: 1
+            lower: 162.3
+            upper: 174.7
+            forecast: 168.5
+          - date: 2024-04-01
+            quantiles:
+              "0.1": 151.2
+              "0.5": 168.5
+              "0.9": 186.0
+            period: 1
+            lower: 162.3
+            upper: 174.7
+            forecast: 168.5
+        accumulated:
+          path: baseline
+          total: 8231.5
+          lower: 7614.2
+          upper: 8848.8
+          confidence_level: 0.8
+          interval_reason: interval_reason
+          total_reason: total_reason
+          by_period:
+          - date: 2024-04-01
+            cumulative_lower: 301.2
+            cumulative_upper: 355.6
+            weight: 0.95
+            cumulative: 328.4
+          - date: 2024-04-01
+            cumulative_lower: 301.2
+            cumulative_upper: 355.6
+            weight: 0.95
+            cumulative: 328.4
+          assumptions:
+            measured: true
+            correlation: 0.5
+            timing: start_of_period
+            correlation_source: default
+            decay: 0.95
+            periods_per_year: 12
+            basis: equicorrelated period errors
+            discount_rate: 0.1
+      properties:
+        result:
+          $ref: "#/components/schemas/ForecastResponse_result"
+        adjusted:
+          $ref: "#/components/schemas/AdjustedForecast"
+        accumulated:
+          $ref: "#/components/schemas/AccumulatedForecast"
+        meta:
+          $ref: "#/components/schemas/ForecastResponse_meta"
+      type: object
+    AdjustedForecast:
+      description: |
+        The what-if scenario path. Present only when `adjustments` was sent, as a sibling of
+        `result` — never a field inside it. The adjusted path is never stored, so scenarios
+        cannot pollute accuracy tracking.
+      example:
+        stored: false
+        adjustments_applied:
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 6
+          periods_affected: 4
+        - from_period: 3
+          type: multiplier
+          value: 0.8
+          to_period: 6
+          periods_affected: 4
+        forecasts:
+        - date: 2024-04-01
+          quantiles:
+            "0.1": 151.2
+            "0.5": 168.5
+            "0.9": 186.0
+          period: 1
+          lower: 162.3
+          upper: 174.7
+          forecast: 168.5
+        - date: 2024-04-01
+          quantiles:
+            "0.1": 151.2
+            "0.5": 168.5
+            "0.9": 186.0
+          period: 1
+          lower: 162.3
+          upper: 174.7
+          forecast: 168.5
+      properties:
+        forecasts:
+          description: "The baseline path with every adjustment applied, in array\
+            \ order"
+          items:
+            $ref: "#/components/schemas/ForecastPeriod"
+          type: array
+        adjustments_applied:
+          description: "Echo of each adjustment as applied, in order"
+          items:
+            $ref: "#/components/schemas/AdjustedForecast_adjustments_applied_inner"
+          type: array
+        stored:
+          description: Always false — only the baseline in `result` is persisted and
+            scored for accuracy
+          example: false
+          type: boolean
+      type: object
+    AccumulatedForecast:
+      description: |
+        Cumulative projection over the forecast path. Present only when `accumulate` was
+        sent, as a sibling of `result`.
+      example:
+        path: baseline
+        total: 8231.5
+        lower: 7614.2
+        upper: 8848.8
+        confidence_level: 0.8
+        interval_reason: interval_reason
+        total_reason: total_reason
+        by_period:
+        - date: 2024-04-01
+          cumulative_lower: 301.2
+          cumulative_upper: 355.6
+          weight: 0.95
+          cumulative: 328.4
+        - date: 2024-04-01
+          cumulative_lower: 301.2
+          cumulative_upper: 355.6
+          weight: 0.95
+          cumulative: 328.4
+        assumptions:
+          measured: true
+          correlation: 0.5
+          timing: start_of_period
+          correlation_source: default
+          decay: 0.95
+          periods_per_year: 12
+          basis: equicorrelated period errors
+          discount_rate: 0.1
+      properties:
+        total:
+          description: Σ (value × survival × discount) over the horizon. Null when
+            a period lacks a usable point forecast (see `total_reason`).
+          example: 8231.5
+          nullable: true
+          type: number
+        total_reason:
+          description: Why `total` is null; null when the total is usable
+          nullable: true
+          type: string
+          example: null
+        lower:
+          description: |
+            Lower bound of the total under the stated correlation assumption. Null with an
+            `interval_reason` when any period lacks a band or its coverage is unknown —
+            rather than a band built from a partial set of variances.
+          example: 7614.2
+          nullable: true
+          type: number
+        upper:
+          example: 8848.8
+          nullable: true
+          type: number
+        interval_reason:
+          description: Why the total's band is absent; null when the band is present
+          nullable: true
+          type: string
+          example: null
+        confidence_level:
+          description: Coverage the total's band targets
+          example: 0.8
+          type: number
+        path:
+          description: "Which path was accumulated — `adjusted` when `adjustments`\
+            \ was also sent, otherwise `baseline`"
+          enum:
+          - baseline
+          - adjusted
+          example: baseline
+          type: string
+        assumptions:
+          $ref: "#/components/schemas/AccumulatedForecast_assumptions"
+        by_period:
+          description: Running accumulation per period — `cumulative` through period
+            L is the number a lead-time/safety-stock calculation reads
+          items:
+            $ref: "#/components/schemas/AccumulatedForecast_by_period_inner"
+          type: array
+      type: object
+    AnalysisResponse:
+      example:
+        result:
+          recommended_methods:
+          - exponential_smoothing
+          - moving_average
+          characteristics:
+            total_periods: 24
+            std_deviation: 15.3
+            mean_value: 125.5
+            non_zero_events: 20
+            trend_strength: 0.75
+            seasonality_detected: true
+          pattern_type: regular
+          confidence: high
+        meta:
+          timing:
+            total: 97.8
+            analysing: 85.3
+            validation: 12.5
+      properties:
+        result:
+          $ref: "#/components/schemas/AnalysisResponse_result"
+        meta:
+          $ref: "#/components/schemas/AnalysisResponse_meta"
+      type: object
+    ErrorResponse:
+      example:
+        message: Unauthenticated.
+        errors:
+          key:
+          - errors
+          - errors
+      properties:
+        message:
+          example: Unauthenticated.
+          type: string
+        errors:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          type: object
+      type: object
+    ValidationErrorResponse:
+      example:
+        message: Data points exceed the maximum allowed for your current plan (1000).
+        errors:
+          data:
+          - Data points exceed the maximum allowed for your current plan (1000).
+          data.0.date:
+          - Invalid date format
+          data.1.value:
+          - Value must be numeric
+      properties:
+        message:
+          example: Data points exceed the maximum allowed for your current plan (1000).
+          type: string
+        errors:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          example:
+            data:
+            - Data points exceed the maximum allowed for your current plan (1000).
+            data.0.date:
+            - Invalid date format
+            data.1.value:
+            - Value must be numeric
+          type: object
+      type: object
+    GroupedForecastRequest:
+      description: |
+        Configuration is request-level only: every node of a hierarchy must share `periods`,
+        `frequency`, `model` and `confidence`, so per-series overrides are rejected rather
+        than silently ignored. The planning parameters (`quantiles`, `value_bounds`,
+        `adjustments`, `accumulate`) are not supported on grouped forecasts and are rejected
+        explicitly. All series must end on the same date so forecast periods align;
+        histories may start whenever they like — a segment that launched later simply
+        contributes zero before its first data point. A request may expand to at most 250
+        nodes (leaves plus every derived aggregate and the total) across at most 4
+        hierarchy levels.
+      example:
+        identifier: mrr
+        correlation: 0.5
+        series:
+        - data:
+          - date: 2024-01-01
+            value: 42000
+          - date: 2024-01-01
+            value: 42000
+          segment:
+            region: eu
+            plan: pro
+        - data:
+          - date: 2024-01-01
+            value: 42000
+          - date: 2024-01-01
+            value: 42000
+          segment:
+            region: eu
+            plan: pro
+        - data:
+          - date: 2024-01-01
+            value: 42000
+          - date: 2024-01-01
+            value: 42000
+          segment:
+            region: eu
+            plan: pro
+        - data:
+          - date: 2024-01-01
+            value: 42000
+          - date: 2024-01-01
+            value: 42000
+          segment:
+            region: eu
+            plan: pro
+        - data:
+          - date: 2024-01-01
+            value: 42000
+          - date: 2024-01-01
+            value: 42000
+          segment:
+            region: eu
+            plan: pro
+        hierarchy:
+        - region
+        - plan
+        confidence: 0.17127370895103003
+        confidence_level: 0.6364436002932659
+        data_type: revenue
+        periods: 6
+        model: standard
+        reconciliation: bottom_up
+        tenant_context: tenant_context
+        frequency: M
+      properties:
+        identifier:
+          description: |
+            Names the measure being forecast (e.g. "mrr"). The hierarchy's total is stored
+            under this identifier exactly like a plain /v2/forecast for it — the total of
+            the hierarchy IS the measure.
+          example: mrr
+          type: string
+        tenant_context:
+          description: |
+            Optional tenant scope, independent of segment — tenancy keeps meaning "whose
+            data is this", segment means "which slice".
+          nullable: true
+          type: string
+        hierarchy:
+          description: "The dimensions of the hierarchy, outermost first. Each series'\
+            \ segment must name exactly these dimensions."
+          example:
+          - region
+          - plan
+          items:
+            maxLength: 64
+            type: string
+          maxItems: 4
+          minItems: 1
+          type: array
+        reconciliation:
+          default: bottom_up
+          description: |
+            - bottom_up (default): only the leaves are forecast; every aggregate is the
+              exact sum of its children. Fast and cheap; best when leaf histories are
+              substantial enough to forecast well on their own.
+            - min_trace: every node — aggregates included — is forecast, then MinTrace
+              optimally redistributes the disagreement between levels into a coherent set.
+              Costs one forecast per node, but lets the usually-smoother aggregate series
+              inform the result, which tends to help when leaves are short or noisy.
+
+            top_down is not supported and is rejected by name.
+          enum:
+          - bottom_up
+          - min_trace
+          example: bottom_up
+          type: string
+        correlation:
+          default: 0.5
+          description: |
+            bottom_up only — the assumed correlation between sibling errors when building
+            aggregate confidence bands. 0 = independent siblings, 1 = perfectly correlated
+            (equivalent to summing the bounds). Echoed back in the response and never
+            labelled as measured.
+          example: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        frequency:
+          description: "Data frequency, shared by every series in the hierarchy"
+          enum:
+          - H
+          - D
+          - W
+          - M
+          - MS
+          - ME
+          - Q
+          - "Y"
+          example: M
+          type: string
+        periods:
+          description: "Number of periods to forecast, shared by every node"
+          example: 6
+          maximum: 365
+          minimum: 1
+          type: integer
+        data_type:
+          default: sales
+          description: "Type of data (e.g., sales, demand, revenue). Sales-family\
+            \ types get non-negative reconciliation treatment."
+          example: revenue
+          maxLength: 50
+          type: string
+        model:
+          default: standard
+          description: Forecasting engine used for every node
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          type: string
+        confidence:
+          default: 0.8
+          description: "Confidence level for prediction intervals, shared by every\
+            \ node"
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        confidence_level:
+          description: "Alias for `confidence`; if both are sent, `confidence` wins"
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        series:
+          description: |
+            The leaves of the hierarchy — one entry per combination of dimension values,
+            each combination exactly once. Up to 200 series on a paid plan, 10 on the free
+            tier. Aggregate levels are derived by the API and must not be sent.
+          items:
+            $ref: "#/components/schemas/GroupedForecastSeries"
+          maxItems: 200
+          minItems: 2
+          type: array
+      required:
+      - frequency
+      - hierarchy
+      - identifier
+      - periods
+      - series
+      type: object
+    GroupedForecastSeries:
+      example:
+        data:
+        - date: 2024-01-01
+          value: 42000
+        - date: 2024-01-01
+          value: 42000
+        segment:
+          region: eu
+          plan: pro
+      properties:
+        segment:
+          additionalProperties: true
+          description: |
+            Names exactly the declared hierarchy dimensions — no more, no fewer. Values are
+            non-empty scalars of at most 128 characters.
+          example:
+            region: eu
+            plan: pro
+          type: object
+        data:
+          description: "Historical data for this leaf (at most 1,000 points per series\
+            \ on the free tier)"
+          items:
+            $ref: "#/components/schemas/GroupedForecastSeries_data_inner"
+          minItems: 2
+          type: array
+      required:
+      - data
+      - segment
+      type: object
+    GroupedForecastAccepted:
+      example:
+        series_count: 3
+        time_taken_ms: 41.2
+        node_count: 6
+        grouped_forecast_id: k3n9x2m4p8q1w5r7
+        reconciliation: bottom_up
+        status: pending
+      properties:
+        grouped_forecast_id:
+          description: "Id to poll via GET /v2/forecast/grouped/{grouped_forecast_id}"
+          example: k3n9x2m4p8q1w5r7
+          type: string
+        status:
+          example: pending
+          type: string
+        series_count:
+          description: Leaf series submitted
+          example: 3
+          type: integer
+        node_count:
+          description: What will actually be forecast and reconciled — the leaves
+            plus every derived aggregate and the total
+          example: 6
+          type: integer
+        reconciliation:
+          enum:
+          - bottom_up
+          - min_trace
+          example: bottom_up
+          type: string
+        time_taken_ms:
+          example: 41.2
+          type: number
+      type: object
+    ValidationFailedResponse:
+      description: "The validation-error shape shared by the grouped, batch and product-insights\
+        \ endpoints"
+      example:
+        time_taken_ms: 12.4
+        error: Validation failed
+        errors:
+          series.0.data:
+          - The series.0.data field must have at least 2 items.
+      properties:
+        error:
+          example: Validation failed
+          type: string
+        errors:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          example:
+            series.0.data:
+            - The series.0.data field must have at least 2 items.
+          type: object
+        time_taken_ms:
+          example: 12.4
+          type: number
+      type: object
+    GroupedForecastStatusResponse:
+      example:
+        completed_at: 2026-07-19T09:15:31Z
+        started_at: 2026-07-19T09:14:02Z
+        created_at: 2026-07-19T09:14:01Z
+        node_count: 6
+        error: error
+        results: ""
+        grouped_forecast_id: k3n9x2m4p8q1w5r7
+        status: completed
+      properties:
+        grouped_forecast_id:
+          example: k3n9x2m4p8q1w5r7
+          type: string
+        status:
+          description: The run is all-or-nothing — there is no per-node failure state
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+          example: completed
+          type: string
+        node_count:
+          example: 6
+          type: integer
+        results:
+          allOf:
+          - $ref: "#/components/schemas/GroupedForecastResults"
+          description: Populated once status is `completed`; null before that and
+            on failure
+          nullable: true
+        error:
+          description: Failure reason when status is `failed`
+          nullable: true
+          type: string
+          example: null
+        started_at:
+          example: 2026-07-19T09:14:02Z
+          format: date-time
+          nullable: true
+          type: string
+        completed_at:
+          example: 2026-07-19T09:15:31Z
+          format: date-time
+          nullable: true
+          type: string
+        created_at:
+          example: 2026-07-19T09:14:01Z
+          format: date-time
+          nullable: true
+          type: string
+      type: object
+    GroupedForecastResults:
+      properties:
+        identifier:
+          example: mrr
+          type: string
+        tenant_context:
+          nullable: true
+          type: string
+          example: null
+        hierarchy:
+          example:
+          - region
+          - plan
+          items:
+            type: string
+          type: array
+        reconciliation:
+          $ref: "#/components/schemas/GroupedForecastResults_reconciliation"
+        confidence_level:
+          example: 0.8
+          type: number
+        node_count:
+          example: 6
+          type: integer
+        nodes:
+          additionalProperties:
+            $ref: "#/components/schemas/GroupedForecastNode"
+          description: |
+            Every node of the hierarchy, keyed by segment key: `total` for the root, then
+            e.g. `region=eu` for aggregates and `plan=pro|region=eu` for leaves. Every
+            parent equals the sum of its children in every period.
+          type: object
+      type: object
+    GroupedForecastNode:
+      properties:
+        identifier:
+          description: The measure — the same for every node
+          example: mrr
+          type: string
+        segment:
+          additionalProperties: true
+          description: "The dimension values this node covers — empty for the total,\
+            \ all declared dimensions for a leaf"
+          example:
+            region: eu
+          type: object
+        level:
+          description: Depth in the tree; 0 is the total
+          example: 1
+          type: integer
+        is_leaf:
+          example: false
+          type: boolean
+        parent:
+          description: Segment key of the parent node; null for the total
+          example: total
+          nullable: true
+          type: string
+        children:
+          description: Segment keys of the children; empty for leaves
+          example:
+          - plan=free|region=eu
+          - plan=pro|region=eu
+          items:
+            type: string
+          type: array
+        forecasts:
+          description: The reconciled path — this is what is stored and accuracy-tracked
+            per node
+          items:
+            $ref: "#/components/schemas/ForecastPeriod"
+          type: array
+        model_info:
+          additionalProperties: true
+          description: |
+            Method and reconciliation details for this node. With min_trace, the node's
+            unreconciled path is reported under `reconciliation.base_forecast`. When an
+            aggregate band cannot be built honestly (a child's band coverage is unknown),
+            the band is omitted and `reconciliation.interval_reason` states why.
+          type: object
+      type: object
+    InventoryPlanningRequest:
+      example:
+        identifier: SKU-12345
+        data:
+        - date: 2023-01-01
+          value: 150.5
+        - date: 2023-01-01
+          value: 150.5
+        confidence_level: 0.95
+        periods: 6
+        enable_intelligent_aggregation: true
+        inventory_settings:
+          current_stock: 250
+          minimum_stock: 50
+          suppliers:
+          - identifier: supplier-a
+            cost_per_unit: 12.5
+            lead_time_days: 14
+            minimum_order_quantity: 100
+            reliability_score: 0.98
+          - identifier: supplier-a
+            cost_per_unit: 12.5
+            lead_time_days: 14
+            minimum_order_quantity: 100
+            reliability_score: 0.98
+          service_level: 0.95
+        frequency: M
+        start_date: 2024-01-01
+      properties:
+        identifier:
+          description: "SKU, Product ID, or other identifier for the inventory item"
+          example: SKU-12345
+          type: string
+        frequency:
+          description: |
+            Data frequency for forecasting:
+            - D: Daily
+            - W: Weekly
+            - M: Monthly (end of month)
+            - MS: Monthly (start of month)
+            - ME: Monthly (end of month)
+            - Q: Quarterly
+            - Y: Yearly
+          enum:
+          - D
+          - W
+          - M
+          - MS
+          - ME
+          - Q
+          - "Y"
+          example: M
+          type: string
+        start_date:
+          description: Optional start date for the forecast period
+          example: 2024-01-01
+          format: date
+          nullable: true
+          type: string
+        periods:
+          description: Number of periods to forecast ahead
+          example: 6
+          minimum: 1
+          type: integer
+        enable_intelligent_aggregation:
+          description: Enable intelligent data aggregation for improved forecasting
+          example: true
+          type: boolean
+        confidence_level:
+          description: Confidence level for forecast intervals (default 0.95)
+          example: 0.95
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        data:
+          description: Historical demand/sales data for forecasting
+          items:
+            $ref: "#/components/schemas/InventoryPlanningRequest_data_inner"
+          minItems: 1
+          type: array
+        inventory_settings:
+          $ref: "#/components/schemas/InventoryPlanningRequest_inventory_settings"
+      required:
+      - data
+      - frequency
+      - identifier
+      - inventory_settings
+      - periods
+      type: object
+    InventoryPlanningResponse:
+      example:
+        result:
+          safety_stock: 75.2
+          identifier: SKU-12345
+          current_stock: 250
+          minimum_stock: 50
+          forecast_data:
+          - date: 2024-01-01
+            period: 1
+            lower: 145.25
+            upper: 186.25
+            forecast: 165.75
+          - date: 2024-01-01
+            period: 1
+            lower: 145.25
+            upper: 186.25
+            forecast: 165.75
+          suppliers:
+          - safety_stock: 75.2
+            reason: "$12.50 per unit, fast delivery, high reliability"
+            total_cost: 2500.0
+            cost_per_unit: 12.5
+            supplier: supplier-a
+            lead_time_days: 14
+            order_quantity: 200
+            expected_delivery: 2024-01-15
+            minimum_order_quantity: 100
+            reliability_score: 0.98
+            lead_time_demand: 87.5
+            reorder_point: 175.5
+          - safety_stock: 75.2
+            reason: "$12.50 per unit, fast delivery, high reliability"
+            total_cost: 2500.0
+            cost_per_unit: 12.5
+            supplier: supplier-a
+            lead_time_days: 14
+            order_quantity: 200
+            expected_delivery: 2024-01-15
+            minimum_order_quantity: 100
+            reliability_score: 0.98
+            lead_time_demand: 87.5
+            reorder_point: 175.5
+          stock_analysis:
+            stock_status: adequate
+            next_order_date: 2024-01-20
+            stockout_risk: 0.15
+            days_of_coverage: 45
+            daily_demand_rate: 5.5
+          reorder_point: 175.5
+        meta:
+          timing:
+            planning: 187.3
+            total: 199.8
+            validation: 12.5
+      properties:
+        result:
+          $ref: "#/components/schemas/InventoryPlanningResponse_result"
+        meta:
+          $ref: "#/components/schemas/InventoryPlanningResponse_meta"
+      type: object
+    TrafficForecastingRequest:
+      example:
+        identifier: api-endpoint-users
+        data:
+        - date: 2023-12-01 14:00:00
+          value: 1500
+        - date: 2023-12-01 14:00:00
+          value: 1500
+        confidence_level: 0.95
+        periods: 24
+        traffic_settings:
+          anomaly_threshold: 3.0
+          cost_per_unit: 0.01
+          fixed_cost_per_capacity: 0.1
+          current_capacity: 2000
+          base_scaling_time: 5
+          enable_auto_scaling: false
+          scaling_buffer: 0.2
+          scale_up_threshold: 0.8
+          scale_down_threshold: 0.3
+          alert_threshold: 1.5
+          baseline_traffic: 1000
+        enable_intelligent_aggregation: true
+        frequency: H
+        start_date: 2000-01-23T04:56:07.000+00:00
+      properties:
+        identifier:
+          description: "Metric identifier (e.g., endpoint name, service name)"
+          example: api-endpoint-users
+          type: string
+        frequency:
+          description: |
+            Data frequency for forecasting:
+            - M: Minute (for real-time traffic)
+            - H: Hourly
+            - D: Daily
+            - W: Weekly
+            - MS: Monthly (start of month)
+            - ME: Monthly (end of month)
+            - Q: Quarterly
+            - Y: Yearly
+          enum:
+          - M
+          - H
+          - D
+          - W
+          - MS
+          - ME
+          - Q
+          - "Y"
+          example: H
+          type: string
+        start_date:
+          description: Optional start date for the forecast period
+          format: date-time
+          nullable: true
+          type: string
+        periods:
+          description: Number of periods to forecast ahead
+          example: 24
+          minimum: 1
+          type: integer
+        enable_intelligent_aggregation:
+          description: Enable intelligent data aggregation for improved forecasting
+          example: true
+          type: boolean
+        confidence_level:
+          description: Confidence level for forecast intervals (default 0.95)
+          example: 0.95
+          maximum: 0.99
+          minimum: 0.1
+          type: number
+        data:
+          description: Historical traffic data for forecasting
+          items:
+            $ref: "#/components/schemas/TrafficForecastingRequest_data_inner"
+          minItems: 1
+          type: array
+        traffic_settings:
+          $ref: "#/components/schemas/TrafficForecastingRequest_traffic_settings"
+      required:
+      - data
+      - frequency
+      - identifier
+      - periods
+      - traffic_settings
+      type: object
+    TrafficForecastingResponse:
+      example:
+        result:
+          capacity_analysis:
+            over_capacity_periods: 0
+            critical_periods: 3
+            forecast_duration_minutes: 1440
+            current_capacity: 2000
+            next_capacity_breach: 2024-01-15
+            utilization_periods:
+            - period: 1
+              utilization: 82.5
+              traffic: 1650.5
+              status: high
+            - period: 1
+              utilization: 82.5
+              traffic: 1650.5
+              status: high
+            capacity_efficiency: 85.5
+          forecast_data:
+          - date: 2000-01-23T04:56:07.000+00:00
+            period: 1
+            lower: 1325.25
+            upper: 1576.25
+            forecast: 1450.75
+          - date: 2000-01-23T04:56:07.000+00:00
+            period: 1
+            lower: 1325.25
+            upper: 1576.25
+            forecast: 1450.75
+          metric: api-endpoint-users
+          cost_optimization:
+            potential_savings: 54.75
+            current_cost: 250.5
+            cost_breakdown:
+              variable_cost: 50.5
+              fixed_cost: 200.0
+            optimized_cost: 195.75
+            recommendations:
+            - potential_savings: 54.75
+              recommended_capacity: 1700
+              description: Reduce capacity from 2000 to 1700 units to save $54.75
+                (21.8%)
+              current_capacity: 2000
+              type: capacity_optimization
+            - potential_savings: 54.75
+              recommended_capacity: 1700
+              description: Reduce capacity from 2000 to 1700 units to save $54.75
+                (21.8%)
+              current_capacity: 2000
+              type: capacity_optimization
+            savings_percentage: 21.8
+          current_capacity: 2000
+          traffic_alerts:
+            alerts:
+            - severity: medium
+              date: 2000-01-23T04:56:07.000+00:00
+              period: 5
+              increase_factor: 1.85
+              predicted_traffic: 1850.5
+              z_score: 3.2
+              type: traffic_spike
+              message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+              baseline_traffic: 1000
+            - severity: medium
+              date: 2000-01-23T04:56:07.000+00:00
+              period: 5
+              increase_factor: 1.85
+              predicted_traffic: 1850.5
+              z_score: 3.2
+              type: traffic_spike
+              message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+              baseline_traffic: 1000
+            medium_severity: 2
+            total_alerts: 2
+            high_severity: 0
+          baseline_traffic: 1000
+          scaling_recommendations:
+            current_utilization: 92.5
+            average_traffic: 1425.3
+            recommendations:
+            - estimated_time_to_scale: 10
+              reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+              potential_savings: 125.5
+              recommended_capacity: 2500
+              urgency: high
+              action: scale_up
+              current_capacity: 2000
+              scaling_factor: 1.25
+            - estimated_time_to_scale: 10
+              reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+              potential_savings: 125.5
+              recommended_capacity: 2500
+              urgency: high
+              action: scale_up
+              current_capacity: 2000
+              scaling_factor: 1.25
+            peak_traffic: 1850.5
+        meta:
+          timing:
+            total: 153.8
+            forecasting: 145.3
+            validation: 8.5
+      properties:
+        result:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result"
+        meta:
+          $ref: "#/components/schemas/TrafficForecastingResponse_meta"
+      type: object
+    deprecatedV1_404_response:
+      example:
+        error: API v1 has been deprecated as of 2025-01
+      properties:
+        error:
+          example: API v1 has been deprecated as of 2025-01
+          type: string
+      type: object
+    getApiRoot_200_response:
+      example:
+        message: ok
+      properties:
+        message:
+          example: ok
+          type: string
+      type: object
+    healthCheck_200_response:
+      example:
+        advanced_models: ok
+        api: ok
+      properties:
+        api:
+          enum:
+          - ok
+          - down
+          example: ok
+          type: string
+        advanced_models:
+          enum:
+          - ok
+          - down
+          example: ok
+          type: string
+      type: object
+    createForecast_400_response:
+      example:
+        reason: No data available
+        time_taken_ms: 125.5
+        error: No suitable forecasting method found
+      properties:
+        error:
+          example: No suitable forecasting method found
+          type: string
+        reason:
+          example: No data available
+          type: string
+        time_taken_ms:
+          example: 125.5
+          type: number
+      type: object
+    createForecast_502_response:
+      example:
+        time_taken_ms: 5120.4
+        error: Forecasting service error
+      properties:
+        error:
+          example: Forecasting service error
+          type: string
+        time_taken_ms:
+          example: 5120.4
+          type: number
+      type: object
+    getGroupedForecast_404_response:
+      example:
+        message: Not found.
+      properties:
+        message:
+          example: Not found.
+          type: string
+      type: object
+    createInventoryPlan_400_response:
+      example:
+        reason: Insufficient historical data for reliable forecasting
+        time_taken_ms: 125.5
+        error: No suitable forecasting method found
+      properties:
+        error:
+          example: No suitable forecasting method found
+          type: string
+        reason:
+          example: Insufficient historical data for reliable forecasting
+          type: string
+        time_taken_ms:
+          example: 125.5
+          type: number
+      type: object
+    createInventoryPlan_500_response:
+      example:
+        time_taken_ms: 256.8
+        error: Inventory planning failed
+      properties:
+        error:
+          example: Inventory planning failed
+          type: string
+        time_taken_ms:
+          example: 256.8
+          type: number
+      type: object
+    createTrafficForecast_500_response:
+      example:
+        time_taken_ms: 256.8
+        error: Traffic forecasting failed
+      properties:
+        error:
+          example: Traffic forecasting failed
+          type: string
+        time_taken_ms:
+          example: 256.8
+          type: number
+      type: object
+    detectAnomalies_422_response_oneOf:
+      properties:
+        error:
+          example: Data is not suitable for seasonal method
+          type: string
+        time_taken_ms:
+          example: 18.3
+          type: number
+      type: object
+    detectAnomalies_422_response:
+      oneOf:
+      - $ref: "#/components/schemas/ValidationErrorResponse"
+      - $ref: "#/components/schemas/detectAnomalies_422_response_oneOf"
+    detectAnomalies_500_response:
+      example:
+        time_taken_ms: 96.5
+        error: Anomaly detection failed
+      properties:
+        error:
+          example: Anomaly detection failed
+          type: string
+        time_taken_ms:
+          example: 96.5
+          type: number
+      type: object
+    createProductInsights_400_response:
+      example:
+        time_taken_ms: 34.1
+        error: Insufficient data for analysis
+      properties:
+        error:
+          example: Insufficient data for analysis
+          type: string
+        time_taken_ms:
+          example: 34.1
+          type: number
+      type: object
+    createBatchProductInsights_422_response:
+      example:
+        total_count: 100
+        valid_count: 98
+        time_taken_ms: 210.4
+        validation_errors:
+          key:
+            key:
+            - validation_errors
+            - validation_errors
+        error: Validation failed for 2 series items
+      properties:
+        error:
+          example: Validation failed for 2 series items
+          type: string
+        validation_errors:
+          additionalProperties:
+            additionalProperties:
+              items:
+                type: string
+              type: array
+            type: object
+          description: "Failing entries, keyed by their index in `series`"
+          type: object
+        valid_count:
+          example: 98
+          type: integer
+        total_count:
+          example: 100
+          type: integer
+        time_taken_ms:
+          example: 210.4
+          type: number
+      type: object
+    createBatchProductInsights_500_response:
+      example:
+        time_taken_ms: 96.5
+        error: Product insights analysis failed
+      properties:
+        error:
+          example: Product insights analysis failed
+          type: string
+        time_taken_ms:
+          example: 96.5
+          type: number
+      type: object
+    ForecastRequest_data_inner:
+      example:
+        date: 2024-01-01
+        value: 150.5
+      properties:
+        date:
+          description: Date of the data point
+          example: 2024-01-01
+          format: date
+          type: string
+        value:
+          description: Numeric value for the data point
+          example: 150.5
+          type: number
+      required:
+      - date
+      - value
+      type: object
+    Adjustments_inner:
+      example:
+        from_period: 3
+        type: multiplier
+        value: 0.8
+        to_period: 9
+      properties:
+        type:
+          description: multiplier scales the value; level_shift adds a constant
+          enum:
+          - multiplier
+          - level_shift
+          example: multiplier
+          type: string
+        value:
+          description: The factor or the offset. A multiplier must be zero or greater.
+          example: 0.8
+          type: number
+        from_period:
+          description: Optional 1-based inclusive start of the window; omit to start
+            at period 1
+          example: 3
+          minimum: 1
+          type: integer
+        to_period:
+          description: Optional 1-based inclusive end of the window; omit to run to
+            the horizon. Must fall within `periods`.
+          example: 9
+          minimum: 1
+          type: integer
+      required:
+      - type
+      - value
+      type: object
+    BatchForecastSeries_data_inner:
+      example:
+        date: 2024-01-01
+        value: 100
+      properties:
+        date:
+          example: 2024-01-01
+          format: date
+          type: string
+        value:
+          example: 100
+          type: number
+      required:
+      - date
+      - value
+      type: object
+    BatchForecastStatusResponse_results_summary:
+      description: Populated when the batch finalises
+      example:
+        model_distribution:
+          standard: 250
+        total_processing_time_ms: 512340.0
+        completed: 248
+        failed: 2
+        avg_processing_time_ms: 2049.4
+        total_series: 250
+        error: error
+      properties:
+        total_series:
+          example: 250
+          type: integer
+        completed:
+          example: 248
+          type: integer
+        failed:
+          example: 2
+          type: integer
+        model_distribution:
+          additionalProperties:
+            type: integer
+          example:
+            standard: 250
+          type: object
+        total_processing_time_ms:
+          example: 512340.0
+          type: number
+        avg_processing_time_ms:
+          example: 2049.4
+          type: number
+        error:
+          description: Present only when the batch failed
+          type: string
+      type: object
+    BatchForecastStatusResponse_results:
+      example:
+        summary:
+          model_distribution:
+            standard: 250
+          total_processing_time_ms: 512340.0
+          completed: 248
+          failed: 2
+          avg_processing_time_ms: 2049.4
+          total_series: 250
+          error: error
+        data:
+          key:
+            identifier: SKU-001
+            tenant_context: null
+            forecasts:
+            - period: 1
+              date: 2024-04-01
+              forecast: 168.5
+              lower: 162.3
+              upper: 174.7
+      properties:
+        summary:
+          $ref: "#/components/schemas/BatchForecastStatusResponse_results_summary"
+        data:
+          additionalProperties:
+            $ref: "#/components/schemas/BatchSeriesResult"
+          description: |
+            Each series' results, keyed by ENTITY id rather than by your identifier —
+            one batch may legitimately contain the same identifier under several
+            tenant_context values, so the identifier alone would not be unique. Match
+            series via the identifier and tenant_context echoed inside each result.
+          type: object
+      type: object
+    BatchForecastStatusResponse_parts_inner:
+      example:
+        completed_at: 2000-01-23T04:56:07.000+00:00
+        started_at: 2000-01-23T04:56:07.000+00:00
+        status: pending
+      properties:
+        status:
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+          type: string
+        started_at:
+          format: date-time
+          nullable: true
+          type: string
+        completed_at:
+          format: date-time
+          nullable: true
+          type: string
+      type: object
+    AnomalyDetectionRequest_allOf_anomaly_settings:
+      description: Optional detection configuration; omit for automatic method selection
+      example:
+        method: auto
+        multiplier: 3.212355282381681
+        threshold: 0.8603726857074552
+        minimum_periods: 60
+        seasonal_period: 55
+      nullable: true
+      properties:
+        method:
+          default: auto
+          description: Detection method; auto picks the best fit for the data's characteristics
+          enum:
+          - auto
+          - zscore
+          - iqr
+          - seasonal
+          type: string
+        threshold:
+          description: Z-score threshold for the zscore method
+          maximum: 5.0
+          minimum: 0.5
+          type: number
+        multiplier:
+          description: IQR multiplier for the iqr method
+          maximum: 5.0
+          minimum: 0.5
+          type: number
+        seasonal_period:
+          description: Season length for the seasonal method; detected automatically
+            when omitted
+          maximum: 365
+          minimum: 2
+          type: integer
+        minimum_periods:
+          description: Minimum data points required before detection runs
+          maximum: 100
+          minimum: 3
+          type: integer
+      type: object
+    AnomalyDetectionResponse_result_anomalies_inner:
+      additionalProperties: true
+      description: "Method-specific fields (z_score, deviation, iqr_multiple, …) accompany\
+        \ the common ones below"
+      example:
+        date: 2024-03-15
+        severity: high
+        index: 14
+        expected_range:
+          key: ""
+        type: spike
+        value: 940
+      properties:
+        index:
+          description: Position of the point in the submitted data
+          example: 14
+          type: integer
+        date:
+          example: 2024-03-15
+          type: string
+        value:
+          example: 940
+          type: number
+        expected_range:
+          additionalProperties: true
+          description: The range the point was expected to fall within
+          type: object
+        severity:
+          example: high
+          type: string
+        type:
+          description: "spike/dip for zscore, outlier_high/outlier_low for iqr, seasonal\
+            \ variants for seasonal"
+          example: spike
+          type: string
+      type: object
+    AnomalyDetectionResponse_result_analysis_detection_summary:
+      description: Present on auto selection
+      example:
+        anomaly_percentage: 5.56
+        total_points: 36
+        anomalies_found: 2
+        severity_distribution:
+          key: 0
+      properties:
+        total_points:
+          example: 36
+          type: integer
+        anomalies_found:
+          example: 2
+          type: integer
+        anomaly_percentage:
+          example: 5.56
+          type: number
+        severity_distribution:
+          additionalProperties:
+            type: integer
+          type: object
+      type: object
+    AnomalyDetectionResponse_result_analysis:
+      example:
+        reason: Regular pattern with stable variance suits z-score detection
+        confidence: high
+        data_characteristics:
+          key: ""
+        method_used: zscore
+        detection_summary:
+          anomaly_percentage: 5.56
+          total_points: 36
+          anomalies_found: 2
+          severity_distribution:
+            key: 0
+      properties:
+        method_used:
+          example: zscore
+          type: string
+        confidence:
+          description: Confidence in the method selection; "user_specified" when a
+            method was named in the request
+          example: high
+          type: string
+        reason:
+          example: Regular pattern with stable variance suits z-score detection
+          type: string
+        data_characteristics:
+          additionalProperties: true
+          description: Statistical profile of the data (present on auto selection)
+          type: object
+        detection_summary:
+          $ref: "#/components/schemas/AnomalyDetectionResponse_result_analysis_detection_summary"
+      type: object
+    AnomalyDetectionResponse_result:
+      example:
+        interpretation:
+          key: ""
+        alternatives:
+        - key: ""
+        - key: ""
+        analysis:
+          reason: Regular pattern with stable variance suits z-score detection
+          confidence: high
+          data_characteristics:
+            key: ""
+          method_used: zscore
+          detection_summary:
+            anomaly_percentage: 5.56
+            total_points: 36
+            anomalies_found: 2
+            severity_distribution:
+              key: 0
+        anomalies:
+        - date: 2024-03-15
+          severity: high
+          index: 14
+          expected_range:
+            key: ""
+          type: spike
+          value: 940
+        - date: 2024-03-15
+          severity: high
+          index: 14
+          expected_range:
+            key: ""
+          type: spike
+          value: 940
+        statistics:
+          key: ""
+      properties:
+        anomalies:
+          description: "Detected anomalies, most severe first"
+          items:
+            $ref: "#/components/schemas/AnomalyDetectionResponse_result_anomalies_inner"
+          type: array
+        analysis:
+          $ref: "#/components/schemas/AnomalyDetectionResponse_result_analysis"
+        alternatives:
+          description: Other suitable methods (present on auto selection)
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+        statistics:
+          additionalProperties: true
+          description: Method statistics (present when a method was named in the request)
+          type: object
+        interpretation:
+          additionalProperties: true
+          description: Human-readable interpretation (present when a method was named
+            in the request)
+          type: object
+      type: object
+    AnomalyDetectionResponse_meta_timing:
+      example:
+        detection: 42.7
+        total: 50.8
+        validation: 8.1
+      properties:
+        validation:
+          example: 8.1
+          type: number
+        detection:
+          example: 42.7
+          type: number
+        total:
+          example: 50.8
+          type: number
+      type: object
+    AnomalyDetectionResponse_meta:
+      example:
+        timing:
+          detection: 42.7
+          total: 50.8
+          validation: 8.1
+      properties:
+        timing:
+          $ref: "#/components/schemas/AnomalyDetectionResponse_meta_timing"
+      type: object
+    ProductInsightsRequest_baseline_period_days:
+      default: auto
+      description: '"auto" or a number of days between 7 and 365 the recent period
+        is compared against'
+      oneOf:
+      - enum:
+        - auto
+        type: string
+      - maximum: 365
+        minimum: 7
+        type: number
+    ProductInsightsRequest_sales_inner:
+      example:
+        date: 2024-03-01
+        quantity_sold: 12
+        selling_price: 24.95
+        selling_price_converted: 0.08008281904610115
+        currency: currency
+        customer_id: customer_id
+        customer_segment: customer_segment
+      properties:
+        date:
+          example: 2024-03-01
+          type: string
+        quantity_sold:
+          example: 12
+          minimum: 0
+          type: number
+        selling_price:
+          example: 24.95
+          minimum: 0
+          type: number
+        selling_price_converted:
+          description: "Price converted to base_currency, when the sale was in another\
+            \ currency"
+          minimum: 0
+          type: number
+        currency:
+          maxLength: 3
+          minLength: 3
+          nullable: true
+          type: string
+        customer_id:
+          maxLength: 255
+          nullable: true
+          type: string
+        customer_segment:
+          maxLength: 255
+          nullable: true
+          type: string
+      required:
+      - date
+      - quantity_sold
+      - selling_price
+      type: object
+    ProductInsightsRequest_purchases_inner:
+      example:
+        date: 2024-02-20
+        cost_price_converted: 0.6027456183070403
+        expected_delivery_date: 2000-01-23
+        currency: currency
+        actual_delivery_date: 2000-01-23
+        supplier_id: supplier_id
+        purchase_order_date: 2000-01-23
+        quantity_purchased: 100
+        cost_price: 10.4
+      properties:
+        date:
+          example: 2024-02-20
+          type: string
+        quantity_purchased:
+          example: 100
+          minimum: 0
+          type: number
+        cost_price:
+          example: 10.4
+          minimum: 0
+          type: number
+        cost_price_converted:
+          minimum: 0
+          type: number
+        currency:
+          maxLength: 3
+          minLength: 3
+          nullable: true
+          type: string
+        supplier_id:
+          maxLength: 255
+          nullable: true
+          type: string
+        purchase_order_date:
+          description: Used for lead-time reliability analysis
+          format: date
+          nullable: true
+          type: string
+        expected_delivery_date:
+          format: date
+          nullable: true
+          type: string
+        actual_delivery_date:
+          format: date
+          nullable: true
+          type: string
+      required:
+      - cost_price
+      - date
+      - quantity_purchased
+      type: object
+    ProductInsightsRequest_cost_history_inner:
+      example:
+        date: 2024-01-01
+        change_reason: change_reason
+        currency: currency
+        cost_price: 9.8
+      properties:
+        date:
+          example: 2024-01-01
+          type: string
+        cost_price:
+          example: 9.8
+          minimum: 0
+          type: number
+        currency:
+          maxLength: 3
+          minLength: 3
+          nullable: true
+          type: string
+        change_reason:
+          maxLength: 500
+          nullable: true
+          type: string
+      required:
+      - cost_price
+      - date
+      type: object
+    ProductInsightsRequest_insight_settings:
+      description: Sensitivity tuning for the individual insight detectors
+      example:
+        enable_seasonality_detection: true
+        purchase_threshold: 1.1895572640327088
+        margin_threshold: 0.600251257751635
+        severity_levels:
+        - critical
+        - critical
+        cost_threshold: 0.5681002890066995
+        sales_threshold: 0.7755774253489579
+      nullable: true
+      properties:
+        sales_threshold:
+          maximum: 5.0
+          minimum: 0.05
+          type: number
+        margin_threshold:
+          maximum: 1.0
+          minimum: 0.01
+          type: number
+        cost_threshold:
+          maximum: 1.0
+          minimum: 0.01
+          type: number
+        purchase_threshold:
+          maximum: 5.0
+          minimum: 0.05
+          type: number
+        enable_seasonality_detection:
+          type: boolean
+        severity_levels:
+          description: Only emit insights at these severities
+          items:
+            enum:
+            - critical
+            - warning
+            - info
+            type: string
+          type: array
+      type: object
+    ProductInsight_recommendation:
+      example:
+        action: review_pricing
+        description: description
+        priority: high
+      properties:
+        action:
+          example: review_pricing
+          type: string
+        description:
+          type: string
+        priority:
+          example: high
+          type: string
+      type: object
+    ProductInsightsResponse_result_product_info:
+      example:
+        group_id: group_id
+        name: name
+      properties:
+        name:
+          nullable: true
+          type: string
+        group_id:
+          nullable: true
+          type: string
+      type: object
+    ProductInsightsResponse_result_summary_analysis_period:
+      example:
+        end_date: end_date
+        start_date: start_date
+        total_days: 0
+      properties:
+        start_date:
+          type: string
+        end_date:
+          type: string
+        total_days:
+          type: integer
+      type: object
+    ProductInsightsResponse_result_summary:
+      example:
+        total_insights: 1
+        data_sources_analyzed:
+        - sales
+        - purchases
+        - cost_history
+        categories:
+        - profitability
+        analysis_period:
+          end_date: end_date
+          start_date: start_date
+          total_days: 0
+        severity_distribution:
+          critical: 0
+          warning: 1
+          info: 0
+      properties:
+        total_insights:
+          example: 1
+          type: integer
+        severity_distribution:
+          additionalProperties:
+            type: integer
+          example:
+            critical: 0
+            warning: 1
+            info: 0
+          type: object
+        categories:
+          example:
+          - profitability
+          items:
+            type: string
+          type: array
+        analysis_period:
+          $ref: "#/components/schemas/ProductInsightsResponse_result_summary_analysis_period"
+        data_sources_analyzed:
+          example:
+          - sales
+          - purchases
+          - cost_history
+          items:
+            type: string
+          type: array
+      type: object
+    ProductInsightsResponse_result_comparison_developments:
+      description: New / changed / resolved breakdown so repeat calls make genuine
+        developments easy to pick out
+      example:
+        summary: summary
+        new:
+        - key: ""
+        - key: ""
+        unchanged_count: 6
+        changed:
+        - key: ""
+        - key: ""
+        resolved:
+        - key: ""
+        - key: ""
+      properties:
+        new:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+        changed:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+        resolved:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+        unchanged_count:
+          type: integer
+        summary:
+          type: string
+      type: object
+    ProductInsightsResponse_result_comparison:
+      description: Present from the second analysis of a product onward; null on the
+        first
+      example:
+        result:
+          key: ""
+        developments:
+          summary: summary
+          new:
+          - key: ""
+          - key: ""
+          unchanged_count: 6
+          changed:
+          - key: ""
+          - key: ""
+          resolved:
+          - key: ""
+          - key: ""
+        from: 2000-01-23T04:56:07.000+00:00
+        to: 2000-01-23T04:56:07.000+00:00
+      nullable: true
+      properties:
+        from:
+          description: Timestamp of the previous analysis
+          format: date-time
+          type: string
+        to:
+          format: date-time
+          type: string
+        result:
+          additionalProperties: true
+          type: object
+        developments:
+          $ref: "#/components/schemas/ProductInsightsResponse_result_comparison_developments"
+      type: object
+    ProductInsightsResponse_result:
+      example:
+        base_currency: USD
+        summary:
+          total_insights: 1
+          data_sources_analyzed:
+          - sales
+          - purchases
+          - cost_history
+          categories:
+          - profitability
+          analysis_period:
+            end_date: end_date
+            start_date: start_date
+            total_days: 0
+          severity_distribution:
+            critical: 0
+            warning: 1
+            info: 0
+        identifier: SKU-12345
+        comparison:
+          result:
+            key: ""
+          developments:
+            summary: summary
+            new:
+            - key: ""
+            - key: ""
+            unchanged_count: 6
+            changed:
+            - key: ""
+            - key: ""
+            resolved:
+            - key: ""
+            - key: ""
+          from: 2000-01-23T04:56:07.000+00:00
+          to: 2000-01-23T04:56:07.000+00:00
+        insights:
+        - severity: warning
+          date: 2024-03-05
+          confidence: medium
+          description: description
+          recommendation:
+            action: review_pricing
+            description: description
+            priority: high
+          metrics:
+            key: ""
+          change_status: new
+          type: margin_compression
+          title: Margin dropped 8.2% versus baseline
+          class: margin
+        - severity: warning
+          date: 2024-03-05
+          confidence: medium
+          description: description
+          recommendation:
+            action: review_pricing
+            description: description
+            priority: high
+          metrics:
+            key: ""
+          change_status: new
+          type: margin_compression
+          title: Margin dropped 8.2% versus baseline
+          class: margin
+        product_info:
+          group_id: group_id
+          name: name
+        tenant_context: tenant_context
+      properties:
+        identifier:
+          example: SKU-12345
+          type: string
+        tenant_context:
+          nullable: true
+          type: string
+        product_info:
+          $ref: "#/components/schemas/ProductInsightsResponse_result_product_info"
+        base_currency:
+          example: USD
+          nullable: true
+          type: string
+        insights:
+          items:
+            $ref: "#/components/schemas/ProductInsight"
+          type: array
+        summary:
+          $ref: "#/components/schemas/ProductInsightsResponse_result_summary"
+        comparison:
+          $ref: "#/components/schemas/ProductInsightsResponse_result_comparison"
+      type: object
+    ProductInsightsResponse_meta_timing:
+      example:
+        total: 151.9
+        analysis: 148.7
+        validation: 2.1
+      properties:
+        validation:
+          example: 2.1
+          type: number
+        analysis:
+          example: 148.7
+          type: number
+        total:
+          example: 151.9
+          type: number
+      type: object
+    ProductInsightsResponse_meta_data_quality:
+      example:
+        total_data_points: 6
+        datasets_provided:
+        - sales
+        - purchases
+        - cost_history
+      properties:
+        total_data_points:
+          example: 6
+          type: integer
+        datasets_provided:
+          example:
+          - sales
+          - purchases
+          - cost_history
+          items:
+            type: string
+          type: array
+      type: object
+    ProductInsightsResponse_meta:
+      example:
+        timing:
+          total: 151.9
+          analysis: 148.7
+          validation: 2.1
+        data_quality:
+          total_data_points: 6
+          datasets_provided:
+          - sales
+          - purchases
+          - cost_history
+      properties:
+        timing:
+          $ref: "#/components/schemas/ProductInsightsResponse_meta_timing"
+        data_quality:
+          $ref: "#/components/schemas/ProductInsightsResponse_meta_data_quality"
+      type: object
+    ForecastResponse_result:
+      description: The baseline forecast — the only path that is stored and accuracy-tracked
+      example:
+        identifier: SKU-12345
+        model_info:
+          key: ""
+        tenant_context: tenant_context
+        forecasts:
+        - date: 2024-04-01
+          quantiles:
+            "0.1": 151.2
+            "0.5": 168.5
+            "0.9": 186.0
+          period: 1
+          lower: 162.3
+          upper: 174.7
+          forecast: 168.5
+        - date: 2024-04-01
+          quantiles:
+            "0.1": 151.2
+            "0.5": 168.5
+            "0.9": 186.0
+          period: 1
+          lower: 162.3
+          upper: 174.7
+          forecast: 168.5
+      properties:
+        identifier:
+          description: Echoes the series identifier from the request
+          example: SKU-12345
+          type: string
+        tenant_context:
+          nullable: true
+          type: string
+          example: null
+        forecasts:
+          description: "One row per forecast period. Each period carries its own bounds,\
+            \ and they widen with horizon."
+          items:
+            $ref: "#/components/schemas/ForecastPeriod"
+          type: array
+        model_info:
+          additionalProperties: true
+          description: |
+            The selected model (`best_model`), the models evaluated, the interval
+            source, and per-model back-testing scores (smape/mape/mase) when validation
+            runs. Also carries `bounds_transform` when `value_bounds` was sent, and
+            `quantile_levels` when a fan was requested.
+          type: object
+      type: object
+    ForecastResponse_meta_timing:
+      example:
+        total: 125.6
+        selection: 45.3
+        forecasting: 67.8
+        validation: 12.5
+      properties:
+        validation:
+          description: Time taken for validation in milliseconds
+          example: 12.5
+          type: number
+        selection:
+          description: Time taken for method selection in milliseconds
+          example: 45.3
+          type: number
+        forecasting:
+          description: Time taken for forecasting in milliseconds
+          example: 67.8
+          type: number
+        total:
+          description: Total processing time in milliseconds
+          example: 125.6
+          type: number
+      type: object
+    ForecastResponse_meta:
+      example:
+        selection_metric: smape
+        timing:
+          total: 125.6
+          selection: 45.3
+          forecasting: 67.8
+          validation: 12.5
+      properties:
+        selection_metric:
+          description: The back-testing metric that actually chose the winning model
+          example: smape
+          type: string
+        timing:
+          $ref: "#/components/schemas/ForecastResponse_meta_timing"
+      type: object
+    AdjustedForecast_adjustments_applied_inner:
+      example:
+        from_period: 3
+        type: multiplier
+        value: 0.8
+        to_period: 6
+        periods_affected: 4
+      properties:
+        type:
+          enum:
+          - multiplier
+          - level_shift
+          example: multiplier
+          type: string
+        value:
+          example: 0.8
+          type: number
+        from_period:
+          example: 3
+          type: integer
+        to_period:
+          example: 6
+          type: integer
+        periods_affected:
+          description: How many forecast periods this adjustment touched
+          example: 4
+          type: integer
+      type: object
+    AccumulatedForecast_assumptions:
+      description: "The assumptions behind the total and its band, stated explicitly"
+      example:
+        measured: true
+        correlation: 0.5
+        timing: start_of_period
+        correlation_source: default
+        decay: 0.95
+        periods_per_year: 12
+        basis: equicorrelated period errors
+        discount_rate: 0.1
+      properties:
+        correlation:
+          example: 0.5
+          type: number
+        correlation_source:
+          enum:
+          - default
+          - request
+          example: default
+          type: string
+        measured:
+          description: True only when the correlation in force is our measured default
+            — a caller-supplied value is never labelled measured
+          example: true
+          type: boolean
+        basis:
+          description: The statistical model behind the total's band
+          example: equicorrelated period errors
+          type: string
+        decay:
+          example: 0.95
+          type: number
+        discount_rate:
+          example: 0.1
+          type: number
+        periods_per_year:
+          description: How the annual discount rate was converted to the series frequency
+          example: 12
+          type: number
+        timing:
+          example: start_of_period
+          type: string
+      type: object
+    AccumulatedForecast_by_period_inner:
+      example:
+        date: 2024-04-01
+        cumulative_lower: 301.2
+        cumulative_upper: 355.6
+        weight: 0.95
+        cumulative: 328.4
+      properties:
+        date:
+          example: 2024-04-01
+          format: date
+          type: string
+        weight:
+          description: survival × discount weight applied to this period (period 1
+            is 1.0)
+          example: 0.95
+          type: number
+        cumulative:
+          description: Running weighted total through this period
+          example: 328.4
+          type: number
+        cumulative_lower:
+          description: Running lower bound; present only when every period so far
+            has a usable band
+          example: 301.2
+          type: number
+        cumulative_upper:
+          example: 355.6
+          type: number
+      type: object
+    AnalysisResponse_result_characteristics:
+      example:
+        total_periods: 24
+        std_deviation: 15.3
+        mean_value: 125.5
+        non_zero_events: 20
+        trend_strength: 0.75
+        seasonality_detected: true
+      properties:
+        total_periods:
+          example: 24
+          type: integer
+        non_zero_events:
+          example: 20
+          type: integer
+        mean_value:
+          example: 125.5
+          type: number
+        std_deviation:
+          example: 15.3
+          type: number
+        trend_strength:
+          example: 0.75
+          type: number
+        seasonality_detected:
+          example: true
+          type: boolean
+      type: object
+    AnalysisResponse_result:
+      example:
+        recommended_methods:
+        - exponential_smoothing
+        - moving_average
+        characteristics:
+          total_periods: 24
+          std_deviation: 15.3
+          mean_value: 125.5
+          non_zero_events: 20
+          trend_strength: 0.75
+          seasonality_detected: true
+        pattern_type: regular
+        confidence: high
+      properties:
+        pattern_type:
+          enum:
+          - regular
+          - intermittent
+          - seasonal
+          - trending
+          example: regular
+          type: string
+        characteristics:
+          $ref: "#/components/schemas/AnalysisResponse_result_characteristics"
+        recommended_methods:
+          example:
+          - exponential_smoothing
+          - moving_average
+          items:
+            type: string
+          type: array
+        confidence:
+          enum:
+          - high
+          - medium
+          - low
+          example: high
+          type: string
+      type: object
+    AnalysisResponse_meta_timing:
+      example:
+        total: 97.8
+        analysing: 85.3
+        validation: 12.5
+      properties:
+        validation:
+          description: Time taken for validation in milliseconds
+          example: 12.5
+          type: number
+        analysing:
+          description: Time taken for analysis in milliseconds
+          example: 85.3
+          type: number
+        total:
+          description: Total processing time in milliseconds
+          example: 97.8
+          type: number
+      type: object
+    AnalysisResponse_meta:
+      example:
+        timing:
+          total: 97.8
+          analysing: 85.3
+          validation: 12.5
+      properties:
+        timing:
+          $ref: "#/components/schemas/AnalysisResponse_meta_timing"
+      type: object
+    GroupedForecastSeries_data_inner:
+      example:
+        date: 2024-01-01
+        value: 42000
+      properties:
+        date:
+          example: 2024-01-01
+          format: date
+          type: string
+        value:
+          example: 42000
+          type: number
+      required:
+      - date
+      - value
+      type: object
+    GroupedForecastResults_reconciliation:
+      description: |
+        How coherence was achieved. bottom_up reports the sibling correlation in force,
+        its source, and `measured: false` — the correlation is a stated assumption, not
+        a fitted number. min_trace reports the MinTrace variant and whether the
+        non-negative solve was applied.
+      properties:
+        method:
+          enum:
+          - bottom_up
+          - min_trace
+          example: bottom_up
+          type: string
+        correlation:
+          description: bottom_up only
+          example: 0.5
+          type: number
+        correlation_source:
+          description: bottom_up only
+          enum:
+          - default
+          - request
+          example: default
+          type: string
+        measured:
+          description: bottom_up only — always false; the cross-sibling correlation
+            is an assumption
+          example: false
+          type: boolean
+        variant:
+          description: min_trace only — the MinTrace weighting used
+          example: wls_struct
+          nullable: true
+          type: string
+        nonnegative:
+          description: min_trace only — whether the non-negative solve was applied
+          type: boolean
+      type: object
+    InventoryPlanningRequest_data_inner:
+      example:
+        date: 2023-01-01
+        value: 150.5
+      properties:
+        date:
+          description: Date of the data point (YYYY-MM-DD format)
+          example: 2023-01-01
+          format: date
+          type: string
+        value:
+          description: Demand/sales quantity for the date
+          example: 150.5
+          minimum: 0
+          type: number
+      required:
+      - date
+      - value
+      type: object
+    InventoryPlanningRequest_inventory_settings_suppliers_inner:
+      example:
+        identifier: supplier-a
+        cost_per_unit: 12.5
+        lead_time_days: 14
+        minimum_order_quantity: 100
+        reliability_score: 0.98
+      properties:
+        identifier:
+          description: Unique supplier identifier
+          example: supplier-a
+          type: string
+        lead_time_days:
+          description: Lead time in days for this supplier
+          example: 14
+          minimum: 0.1
+          type: number
+        minimum_order_quantity:
+          description: Minimum order quantity required by supplier
+          example: 100
+          minimum: 0
+          type: number
+        cost_per_unit:
+          description: Cost per unit from this supplier
+          example: 12.5
+          minimum: 0
+          type: number
+        reliability_score:
+          description: "Supplier reliability score (0.1-1.0, default 1.0)"
+          example: 0.98
+          maximum: 1.0
+          minimum: 0.1
+          nullable: true
+          type: number
+      required:
+      - cost_per_unit
+      - identifier
+      - lead_time_days
+      - minimum_order_quantity
+      type: object
+    InventoryPlanningRequest_inventory_settings:
+      description: Current inventory status and supplier information
+      example:
+        current_stock: 250
+        minimum_stock: 50
+        suppliers:
+        - identifier: supplier-a
+          cost_per_unit: 12.5
+          lead_time_days: 14
+          minimum_order_quantity: 100
+          reliability_score: 0.98
+        - identifier: supplier-a
+          cost_per_unit: 12.5
+          lead_time_days: 14
+          minimum_order_quantity: 100
+          reliability_score: 0.98
+        service_level: 0.95
+      properties:
+        current_stock:
+          description: Current quantity in stock
+          example: 250
+          minimum: 0
+          type: number
+        minimum_stock:
+          description: Minimum stock level to maintain
+          example: 50
+          minimum: 0
+          type: number
+        service_level:
+          description: Target service level (probability of not stocking out)
+          example: 0.95
+          maximum: 0.999
+          minimum: 0.5
+          type: number
+        suppliers:
+          description: Available suppliers with their characteristics
+          items:
+            $ref: "#/components/schemas/InventoryPlanningRequest_inventory_settings_suppliers_inner"
+          minItems: 1
+          type: array
+      required:
+      - current_stock
+      - minimum_stock
+      - service_level
+      - suppliers
+      type: object
+    InventoryPlanningResponse_result_suppliers_inner:
+      example:
+        safety_stock: 75.2
+        reason: "$12.50 per unit, fast delivery, high reliability"
+        total_cost: 2500.0
+        cost_per_unit: 12.5
+        supplier: supplier-a
+        lead_time_days: 14
+        order_quantity: 200
+        expected_delivery: 2024-01-15
+        minimum_order_quantity: 100
+        reliability_score: 0.98
+        lead_time_demand: 87.5
+        reorder_point: 175.5
+      properties:
+        supplier:
+          description: Supplier identifier
+          example: supplier-a
+          type: string
+        order_quantity:
+          description: Recommended order quantity
+          example: 200
+          type: number
+        total_cost:
+          description: Total cost for the recommended order
+          example: 2500.0
+          type: number
+        cost_per_unit:
+          description: Cost per unit from this supplier
+          example: 12.5
+          type: number
+        expected_delivery:
+          description: Expected delivery date
+          example: 2024-01-15
+          format: date
+          type: string
+        lead_time_days:
+          description: Lead time in days
+          example: 14
+          type: number
+        minimum_order_quantity:
+          description: Minimum order quantity
+          example: 100
+          type: number
+        reliability_score:
+          description: Supplier reliability score
+          example: 0.98
+          type: number
+        lead_time_demand:
+          description: Expected demand during lead time
+          example: 87.5
+          type: number
+        safety_stock:
+          description: Calculated safety stock for this supplier
+          example: 75.2
+          type: number
+        reorder_point:
+          description: Calculated reorder point for this supplier
+          example: 175.5
+          type: number
+        reason:
+          description: Explanation for the recommendation
+          example: "$12.50 per unit, fast delivery, high reliability"
+          type: string
+      type: object
+    InventoryPlanningResponse_result_stock_analysis:
+      description: Current stock situation analysis
+      example:
+        stock_status: adequate
+        next_order_date: 2024-01-20
+        stockout_risk: 0.15
+        days_of_coverage: 45
+        daily_demand_rate: 5.5
+      properties:
+        days_of_coverage:
+          description: Number of days current stock will last
+          example: 45
+          type: integer
+        stockout_risk:
+          description: "Risk of stockout (0-1, where 1 is certain stockout)"
+          example: 0.15
+          type: number
+        next_order_date:
+          description: Recommended date for next order
+          example: 2024-01-20
+          format: date
+          type: string
+        daily_demand_rate:
+          description: Average daily demand rate
+          example: 5.5
+          type: number
+        stock_status:
+          description: Current stock status assessment
+          enum:
+          - critical
+          - reorder_needed
+          - low
+          - adequate
+          example: adequate
+          type: string
+      type: object
+    InventoryPlanningResponse_result_forecast_data_inner:
+      example:
+        date: 2024-01-01
+        period: 1
+        lower: 145.25
+        upper: 186.25
+        forecast: 165.75
+      properties:
+        period:
+          description: Forecast period number
+          example: 1
+          type: integer
+        date:
+          description: Date for this forecast period
+          example: 2024-01-01
+          format: date
+          type: string
+        forecast:
+          description: Forecasted demand for this period
+          example: 165.75
+          type: number
+        lower:
+          description: Lower confidence bound
+          example: 145.25
+          type: number
+        upper:
+          description: Upper confidence bound
+          example: 186.25
+          type: number
+      type: object
+    InventoryPlanningResponse_result:
+      example:
+        safety_stock: 75.2
+        identifier: SKU-12345
+        current_stock: 250
+        minimum_stock: 50
+        forecast_data:
+        - date: 2024-01-01
+          period: 1
+          lower: 145.25
+          upper: 186.25
+          forecast: 165.75
+        - date: 2024-01-01
+          period: 1
+          lower: 145.25
+          upper: 186.25
+          forecast: 165.75
+        suppliers:
+        - safety_stock: 75.2
+          reason: "$12.50 per unit, fast delivery, high reliability"
+          total_cost: 2500.0
+          cost_per_unit: 12.5
+          supplier: supplier-a
+          lead_time_days: 14
+          order_quantity: 200
+          expected_delivery: 2024-01-15
+          minimum_order_quantity: 100
+          reliability_score: 0.98
+          lead_time_demand: 87.5
+          reorder_point: 175.5
+        - safety_stock: 75.2
+          reason: "$12.50 per unit, fast delivery, high reliability"
+          total_cost: 2500.0
+          cost_per_unit: 12.5
+          supplier: supplier-a
+          lead_time_days: 14
+          order_quantity: 200
+          expected_delivery: 2024-01-15
+          minimum_order_quantity: 100
+          reliability_score: 0.98
+          lead_time_demand: 87.5
+          reorder_point: 175.5
+        stock_analysis:
+          stock_status: adequate
+          next_order_date: 2024-01-20
+          stockout_risk: 0.15
+          days_of_coverage: 45
+          daily_demand_rate: 5.5
+        reorder_point: 175.5
+      properties:
+        identifier:
+          description: Product identifier from the request
+          example: SKU-12345
+          type: string
+        current_stock:
+          description: Current stock level
+          example: 250
+          type: number
+        minimum_stock:
+          description: Minimum stock level to maintain
+          example: 50
+          type: number
+        reorder_point:
+          description: Recommended reorder point for optimal supplier
+          example: 175.5
+          type: number
+        safety_stock:
+          description: Calculated safety stock for optimal supplier
+          example: 75.2
+          type: number
+        suppliers:
+          description: Analysis and recommendations for each supplier
+          items:
+            $ref: "#/components/schemas/InventoryPlanningResponse_result_suppliers_inner"
+          type: array
+        stock_analysis:
+          $ref: "#/components/schemas/InventoryPlanningResponse_result_stock_analysis"
+        forecast_data:
+          description: Underlying forecast data used for planning
+          items:
+            $ref: "#/components/schemas/InventoryPlanningResponse_result_forecast_data_inner"
+          type: array
+      type: object
+    InventoryPlanningResponse_meta_timing:
+      example:
+        planning: 187.3
+        total: 199.8
+        validation: 12.5
+      properties:
+        validation:
+          description: Time taken for request validation in milliseconds
+          example: 12.5
+          type: number
+        planning:
+          description: Time taken for inventory planning in milliseconds
+          example: 187.3
+          type: number
+        total:
+          description: Total processing time in milliseconds
+          example: 199.8
+          type: number
+      type: object
+    InventoryPlanningResponse_meta:
+      example:
+        timing:
+          planning: 187.3
+          total: 199.8
+          validation: 12.5
+      properties:
+        timing:
+          $ref: "#/components/schemas/InventoryPlanningResponse_meta_timing"
+      type: object
+    TrafficForecastingRequest_data_inner:
+      example:
+        date: 2023-12-01 14:00:00
+        value: 1500
+      properties:
+        date:
+          description: Date/time of the data point (supports both date and datetime
+            formats)
+          example: 2023-12-01 14:00:00
+          type: string
+        value:
+          description: Traffic volume for the period
+          example: 1500
+          minimum: 0
+          type: number
+      required:
+      - date
+      - value
+      type: object
+    TrafficForecastingRequest_traffic_settings:
+      description: Infrastructure and traffic configuration
+      example:
+        anomaly_threshold: 3.0
+        cost_per_unit: 0.01
+        fixed_cost_per_capacity: 0.1
+        current_capacity: 2000
+        base_scaling_time: 5
+        enable_auto_scaling: false
+        scaling_buffer: 0.2
+        scale_up_threshold: 0.8
+        scale_down_threshold: 0.3
+        alert_threshold: 1.5
+        baseline_traffic: 1000
+      properties:
+        current_capacity:
+          description: "Current infrastructure capacity (requests, users, etc.)"
+          example: 2000
+          minimum: 1
+          type: number
+        baseline_traffic:
+          description: Normal/expected traffic level for comparison
+          example: 1000
+          minimum: 0
+          type: number
+        scaling_buffer:
+          description: Buffer percentage for scaling decisions (default 0.2 = 20%)
+          example: 0.2
+          maximum: 1
+          minimum: 0
+          nullable: true
+          type: number
+        scale_up_threshold:
+          description: Utilization threshold to trigger scale up (default 0.8 = 80%)
+          example: 0.8
+          maximum: 1
+          minimum: 0
+          nullable: true
+          type: number
+        scale_down_threshold:
+          description: Utilization threshold to trigger scale down (default 0.3 =
+            30%)
+          example: 0.3
+          maximum: 1
+          minimum: 0
+          nullable: true
+          type: number
+        alert_threshold:
+          description: Traffic spike alert threshold as multiplier of baseline (default
+            1.5 = 150%)
+          example: 1.5
+          minimum: 1
+          nullable: true
+          type: number
+        anomaly_threshold:
+          description: Standard deviations for anomaly detection (default 3.0)
+          example: 3.0
+          minimum: 1
+          nullable: true
+          type: number
+        cost_per_unit:
+          description: Variable cost per traffic unit (default 0.01)
+          example: 0.01
+          minimum: 0
+          nullable: true
+          type: number
+        fixed_cost_per_capacity:
+          description: Fixed cost per capacity unit (default 0.1)
+          example: 0.1
+          minimum: 0
+          nullable: true
+          type: number
+        base_scaling_time:
+          description: Base time in minutes for scaling operations (default 5)
+          example: 5
+          minimum: 1
+          nullable: true
+          type: integer
+        enable_auto_scaling:
+          description: Whether auto-scaling is currently enabled (default false)
+          example: false
+          nullable: true
+          type: boolean
+      required:
+      - baseline_traffic
+      - current_capacity
+      type: object
+    TrafficForecastingResponse_result_scaling_recommendations_recommendations_inner:
+      example:
+        estimated_time_to_scale: 10
+        reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+        potential_savings: 125.5
+        recommended_capacity: 2500
+        urgency: high
+        action: scale_up
+        current_capacity: 2000
+        scaling_factor: 1.25
+      properties:
+        action:
+          description: Recommended scaling action
+          enum:
+          - scale_up
+          - scale_down
+          - maintain
+          example: scale_up
+          type: string
+        current_capacity:
+          description: Current capacity
+          example: 2000
+          type: number
+        recommended_capacity:
+          description: Recommended capacity
+          example: 2500
+          type: number
+        scaling_factor:
+          description: Scaling multiplier
+          example: 1.25
+          type: number
+        reason:
+          description: Explanation for the recommendation
+          example: Peak traffic (1850) will exceed 80% of current capacity (2000)
+          type: string
+        urgency:
+          description: Urgency level of the action
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - none
+          example: high
+          type: string
+        estimated_time_to_scale:
+          description: Estimated minutes needed for scaling
+          example: 10
+          type: integer
+        potential_savings:
+          description: Potential cost savings (for scale down)
+          example: 125.5
+          type: number
+      type: object
+    TrafficForecastingResponse_result_scaling_recommendations:
+      description: Infrastructure scaling analysis and recommendations
+      example:
+        current_utilization: 92.5
+        average_traffic: 1425.3
+        recommendations:
+        - estimated_time_to_scale: 10
+          reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+          potential_savings: 125.5
+          recommended_capacity: 2500
+          urgency: high
+          action: scale_up
+          current_capacity: 2000
+          scaling_factor: 1.25
+        - estimated_time_to_scale: 10
+          reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+          potential_savings: 125.5
+          recommended_capacity: 2500
+          urgency: high
+          action: scale_up
+          current_capacity: 2000
+          scaling_factor: 1.25
+        peak_traffic: 1850.5
+      properties:
+        peak_traffic:
+          description: Predicted peak traffic across forecast periods
+          example: 1850.5
+          type: number
+        average_traffic:
+          description: Average predicted traffic
+          example: 1425.3
+          type: number
+        current_utilization:
+          description: Peak utilization percentage of current capacity
+          example: 92.5
+          type: number
+        recommendations:
+          description: Scaling action recommendations
+          items:
+            $ref: "#/components/schemas/TrafficForecastingResponse_result_scaling_recommendations_recommendations_inner"
+          type: array
+      type: object
+    TrafficForecastingResponse_result_capacity_analysis_utilization_periods_inner:
+      example:
+        period: 1
+        utilization: 82.5
+        traffic: 1650.5
+        status: high
+      properties:
+        period:
+          description: Period number
+          example: 1
+          type: integer
+        traffic:
+          description: Predicted traffic
+          example: 1650.5
+          type: number
+        utilization:
+          description: Utilization percentage
+          example: 82.5
+          type: number
+        status:
+          description: Capacity status
+          enum:
+          - over_capacity
+          - critical
+          - high
+          - normal
+          - low
+          example: high
+          type: string
+      type: object
+    TrafficForecastingResponse_result_capacity_analysis:
+      description: Detailed capacity utilization analysis
+      example:
+        over_capacity_periods: 0
+        critical_periods: 3
+        forecast_duration_minutes: 1440
+        current_capacity: 2000
+        next_capacity_breach: 2024-01-15
+        utilization_periods:
+        - period: 1
+          utilization: 82.5
+          traffic: 1650.5
+          status: high
+        - period: 1
+          utilization: 82.5
+          traffic: 1650.5
+          status: high
+        capacity_efficiency: 85.5
+      properties:
+        current_capacity:
+          description: Current infrastructure capacity
+          example: 2000
+          type: number
+        utilization_periods:
+          description: Capacity utilization for each forecast period
+          items:
+            $ref: "#/components/schemas/TrafficForecastingResponse_result_capacity_analysis_utilization_periods_inner"
+          type: array
+        over_capacity_periods:
+          description: Number of periods exceeding capacity
+          example: 0
+          type: integer
+        critical_periods:
+          description: Number of periods above 90% utilization
+          example: 3
+          type: integer
+        forecast_duration_minutes:
+          description: Total forecast duration in minutes
+          example: 1440
+          type: integer
+        next_capacity_breach:
+          description: Date when capacity will be breached
+          example: 2024-01-15
+          format: date
+          nullable: true
+          type: string
+        capacity_efficiency:
+          description: "Efficiency score (0-100, optimal around 75% utilization)"
+          example: 85.5
+          type: number
+      type: object
+    TrafficForecastingResponse_result_traffic_alerts_alerts_inner:
+      example:
+        severity: medium
+        date: 2000-01-23T04:56:07.000+00:00
+        period: 5
+        increase_factor: 1.85
+        predicted_traffic: 1850.5
+        z_score: 3.2
+        type: traffic_spike
+        message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+        baseline_traffic: 1000
+      properties:
+        type:
+          description: Type of alert
+          enum:
+          - traffic_spike
+          - anomaly
+          example: traffic_spike
+          type: string
+        severity:
+          description: Alert severity
+          enum:
+          - high
+          - medium
+          example: medium
+          type: string
+        period:
+          description: Period number where alert occurs
+          example: 5
+          type: integer
+        date:
+          description: Date/time of the alert
+          format: date-time
+          type: string
+        predicted_traffic:
+          description: Predicted traffic value
+          example: 1850.5
+          type: number
+        baseline_traffic:
+          description: Baseline traffic (for spikes)
+          example: 1000
+          type: number
+        increase_factor:
+          description: Traffic increase factor (for spikes)
+          example: 1.85
+          type: number
+        z_score:
+          description: Z-score for anomaly detection
+          example: 3.2
+          type: number
+        message:
+          description: Alert message
+          example: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+          type: string
+      type: object
+    TrafficForecastingResponse_result_traffic_alerts:
+      description: Traffic spike and anomaly alerts
+      example:
+        alerts:
+        - severity: medium
+          date: 2000-01-23T04:56:07.000+00:00
+          period: 5
+          increase_factor: 1.85
+          predicted_traffic: 1850.5
+          z_score: 3.2
+          type: traffic_spike
+          message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+          baseline_traffic: 1000
+        - severity: medium
+          date: 2000-01-23T04:56:07.000+00:00
+          period: 5
+          increase_factor: 1.85
+          predicted_traffic: 1850.5
+          z_score: 3.2
+          type: traffic_spike
+          message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+          baseline_traffic: 1000
+        medium_severity: 2
+        total_alerts: 2
+        high_severity: 0
+      properties:
+        total_alerts:
+          description: Total number of alerts generated
+          example: 2
+          type: integer
+        high_severity:
+          description: Number of high severity alerts
+          example: 0
+          type: integer
+        medium_severity:
+          description: Number of medium severity alerts
+          example: 2
+          type: integer
+        alerts:
+          description: Individual alert details
+          items:
+            $ref: "#/components/schemas/TrafficForecastingResponse_result_traffic_alerts_alerts_inner"
+          type: array
+      type: object
+    TrafficForecastingResponse_result_cost_optimization_cost_breakdown:
+      example:
+        variable_cost: 50.5
+        fixed_cost: 200.0
+      properties:
+        fixed_cost:
+          description: Fixed infrastructure cost
+          example: 200.0
+          type: number
+        variable_cost:
+          description: Variable traffic cost
+          example: 50.5
+          type: number
+      type: object
+    TrafficForecastingResponse_result_cost_optimization_recommendations_inner:
+      example:
+        potential_savings: 54.75
+        recommended_capacity: 1700
+        description: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+        current_capacity: 2000
+        type: capacity_optimization
+      properties:
+        type:
+          description: Type of cost optimization
+          enum:
+          - capacity_optimization
+          - enable_auto_scaling
+          example: capacity_optimization
+          type: string
+        description:
+          description: Recommendation description
+          example: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+          type: string
+        current_capacity:
+          description: Current capacity (for capacity optimization)
+          example: 2000
+          type: number
+        recommended_capacity:
+          description: Recommended capacity (for capacity optimization)
+          example: 1700
+          type: number
+        potential_savings:
+          description: Potential cost savings
+          example: 54.75
+          type: number
+      type: object
+    TrafficForecastingResponse_result_cost_optimization:
+      description: Cost analysis and optimization recommendations
+      example:
+        potential_savings: 54.75
+        current_cost: 250.5
+        cost_breakdown:
+          variable_cost: 50.5
+          fixed_cost: 200.0
+        optimized_cost: 195.75
+        recommendations:
+        - potential_savings: 54.75
+          recommended_capacity: 1700
+          description: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+          current_capacity: 2000
+          type: capacity_optimization
+        - potential_savings: 54.75
+          recommended_capacity: 1700
+          description: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+          current_capacity: 2000
+          type: capacity_optimization
+        savings_percentage: 21.8
+      properties:
+        current_cost:
+          description: Current total cost based on capacity
+          example: 250.5
+          type: number
+        optimized_cost:
+          description: Optimized cost after recommendations
+          example: 195.75
+          type: number
+        potential_savings:
+          description: Potential cost savings
+          example: 54.75
+          type: number
+        savings_percentage:
+          description: Savings as percentage of current cost
+          example: 21.8
+          type: number
+        cost_breakdown:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result_cost_optimization_cost_breakdown"
+        recommendations:
+          description: Cost optimization recommendations
+          items:
+            $ref: "#/components/schemas/TrafficForecastingResponse_result_cost_optimization_recommendations_inner"
+          type: array
+      type: object
+    TrafficForecastingResponse_result_forecast_data_inner:
+      example:
+        date: 2000-01-23T04:56:07.000+00:00
+        period: 1
+        lower: 1325.25
+        upper: 1576.25
+        forecast: 1450.75
+      properties:
+        period:
+          description: Forecast period number
+          example: 1
+          type: integer
+        date:
+          description: Date/time for this forecast period
+          format: date-time
+          type: string
+        forecast:
+          description: Forecasted traffic value
+          example: 1450.75
+          type: number
+        lower:
+          description: Lower confidence bound
+          example: 1325.25
+          type: number
+        upper:
+          description: Upper confidence bound
+          example: 1576.25
+          type: number
+      type: object
+    TrafficForecastingResponse_result:
+      example:
+        capacity_analysis:
+          over_capacity_periods: 0
+          critical_periods: 3
+          forecast_duration_minutes: 1440
+          current_capacity: 2000
+          next_capacity_breach: 2024-01-15
+          utilization_periods:
+          - period: 1
+            utilization: 82.5
+            traffic: 1650.5
+            status: high
+          - period: 1
+            utilization: 82.5
+            traffic: 1650.5
+            status: high
+          capacity_efficiency: 85.5
+        forecast_data:
+        - date: 2000-01-23T04:56:07.000+00:00
+          period: 1
+          lower: 1325.25
+          upper: 1576.25
+          forecast: 1450.75
+        - date: 2000-01-23T04:56:07.000+00:00
+          period: 1
+          lower: 1325.25
+          upper: 1576.25
+          forecast: 1450.75
+        metric: api-endpoint-users
+        cost_optimization:
+          potential_savings: 54.75
+          current_cost: 250.5
+          cost_breakdown:
+            variable_cost: 50.5
+            fixed_cost: 200.0
+          optimized_cost: 195.75
+          recommendations:
+          - potential_savings: 54.75
+            recommended_capacity: 1700
+            description: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+            current_capacity: 2000
+            type: capacity_optimization
+          - potential_savings: 54.75
+            recommended_capacity: 1700
+            description: Reduce capacity from 2000 to 1700 units to save $54.75 (21.8%)
+            current_capacity: 2000
+            type: capacity_optimization
+          savings_percentage: 21.8
+        current_capacity: 2000
+        traffic_alerts:
+          alerts:
+          - severity: medium
+            date: 2000-01-23T04:56:07.000+00:00
+            period: 5
+            increase_factor: 1.85
+            predicted_traffic: 1850.5
+            z_score: 3.2
+            type: traffic_spike
+            message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+            baseline_traffic: 1000
+          - severity: medium
+            date: 2000-01-23T04:56:07.000+00:00
+            period: 5
+            increase_factor: 1.85
+            predicted_traffic: 1850.5
+            z_score: 3.2
+            type: traffic_spike
+            message: "Traffic spike predicted: 1850 (1.9x baseline) at Jan 01, 17:00"
+            baseline_traffic: 1000
+          medium_severity: 2
+          total_alerts: 2
+          high_severity: 0
+        baseline_traffic: 1000
+        scaling_recommendations:
+          current_utilization: 92.5
+          average_traffic: 1425.3
+          recommendations:
+          - estimated_time_to_scale: 10
+            reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+            potential_savings: 125.5
+            recommended_capacity: 2500
+            urgency: high
+            action: scale_up
+            current_capacity: 2000
+            scaling_factor: 1.25
+          - estimated_time_to_scale: 10
+            reason: Peak traffic (1850) will exceed 80% of current capacity (2000)
+            potential_savings: 125.5
+            recommended_capacity: 2500
+            urgency: high
+            action: scale_up
+            current_capacity: 2000
+            scaling_factor: 1.25
+          peak_traffic: 1850.5
+      properties:
+        metric:
+          description: Metric identifier from the request
+          example: api-endpoint-users
+          type: string
+        current_capacity:
+          description: Current infrastructure capacity
+          example: 2000
+          type: number
+        baseline_traffic:
+          description: Baseline traffic level
+          example: 1000
+          type: number
+        scaling_recommendations:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result_scaling_recommendations"
+        capacity_analysis:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result_capacity_analysis"
+        traffic_alerts:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result_traffic_alerts"
+        cost_optimization:
+          $ref: "#/components/schemas/TrafficForecastingResponse_result_cost_optimization"
+        forecast_data:
+          description: Underlying forecast data used for analysis
+          items:
+            $ref: "#/components/schemas/TrafficForecastingResponse_result_forecast_data_inner"
+          type: array
+      type: object
+    TrafficForecastingResponse_meta_timing:
+      example:
+        total: 153.8
+        forecasting: 145.3
+        validation: 8.5
+      properties:
+        validation:
+          description: Time taken for request validation in milliseconds
+          example: 8.5
+          type: number
+        forecasting:
+          description: Time taken for traffic forecasting in milliseconds
+          example: 145.3
+          type: number
+        total:
+          description: Total processing time in milliseconds
+          example: 153.8
+          type: number
+      type: object
+    TrafficForecastingResponse_meta:
+      example:
+        timing:
+          total: 153.8
+          forecasting: 145.3
+          validation: 8.5
+      properties:
+        timing:
+          $ref: "#/components/schemas/TrafficForecastingResponse_meta_timing"
+      type: object
+  securitySchemes:
+    apiKey:
+      description: API key for authentication (Bearer token)
+      in: header
+      name: Authorization
+      type: apiKey
