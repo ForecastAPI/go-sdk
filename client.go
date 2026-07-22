@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.0.0
+API version: 2.0.2
 Contact: support@forecastapi.com
 */
 
@@ -42,7 +42,7 @@ var (
 	queryDescape    = strings.NewReplacer( "%5B", "[", "%5D", "]" )
 )
 
-// APIClient manages communication with the ForecastAPI API v2.0.0
+// APIClient manages communication with the ForecastAPI API v2.0.2
 // In most cases there should be only one, shared, APIClient.
 type APIClient struct {
 	cfg    *Configuration
@@ -55,8 +55,6 @@ type APIClient struct {
 	AnomalyDetectionAPI *AnomalyDetectionAPIService
 
 	BatchForecastingAPI *BatchForecastingAPIService
-
-	DefaultAPI *DefaultAPIService
 
 	ForecastingAPI *ForecastingAPIService
 
@@ -90,7 +88,6 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.AnalysisAPI = (*AnalysisAPIService)(&c.common)
 	c.AnomalyDetectionAPI = (*AnomalyDetectionAPIService)(&c.common)
 	c.BatchForecastingAPI = (*BatchForecastingAPIService)(&c.common)
-	c.DefaultAPI = (*DefaultAPIService)(&c.common)
 	c.ForecastingAPI = (*ForecastingAPIService)(&c.common)
 	c.GroupedForecastingAPI = (*GroupedForecastingAPIService)(&c.common)
 	c.HealthAPI = (*HealthAPIService)(&c.common)

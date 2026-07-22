@@ -6,7 +6,7 @@ info:
   description: Time series forecasting service with multiple algorithms and automatic
     method selection
   title: ForecastAPI
-  version: 2.0.0
+  version: 2.0.2
 servers:
 - description: Production server
   url: https://forecastapi.com
@@ -31,26 +31,6 @@ tags:
 - description: Infrastructure scaling and traffic pattern analysis
   name: Traffic Forecasting
 paths:
-  /v1/{any}:
-    get:
-      deprecated: true
-      operationId: deprecatedV1
-      parameters:
-      - explode: false
-        in: path
-        name: any
-        required: true
-        schema:
-          type: string
-        style: simple
-      responses:
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/deprecatedV1_404_response"
-          description: API v1 has been deprecated
-      summary: Deprecated v1 endpoints
   /v2:
     get:
       operationId: getApiRoot
@@ -3708,14 +3688,6 @@ components:
           $ref: "#/components/schemas/TrafficForecastingResponse_result"
         meta:
           $ref: "#/components/schemas/TrafficForecastingResponse_meta"
-      type: object
-    deprecatedV1_404_response:
-      example:
-        error: API v1 has been deprecated as of 2025-01
-      properties:
-        error:
-          example: API v1 has been deprecated as of 2025-01
-          type: string
       type: object
     getApiRoot_200_response:
       example:

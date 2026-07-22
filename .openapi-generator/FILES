@@ -5,7 +5,6 @@ api/openapi.yaml
 api_analysis.go
 api_anomaly_detection.go
 api_batch_forecasting.go
-api_default.go
 api_forecasting.go
 api_grouped_forecasting.go
 api_health.go
@@ -56,8 +55,6 @@ docs/CreateInventoryPlan400Response.md
 docs/CreateInventoryPlan500Response.md
 docs/CreateProductInsights400Response.md
 docs/CreateTrafficForecast500Response.md
-docs/DefaultAPI.md
-docs/DeprecatedV1404Response.md
 docs/DetectAnomalies422Response.md
 docs/DetectAnomalies422ResponseOneOf.md
 docs/DetectAnomalies500Response.md
@@ -179,7 +176,6 @@ model_create_inventory_plan_400_response.go
 model_create_inventory_plan_500_response.go
 model_create_product_insights_400_response.go
 model_create_traffic_forecast_500_response.go
-model_deprecated_v1_404_response.go
 model_detect_anomalies_422_response.go
 model_detect_anomalies_422_response_one_of.go
 model_detect_anomalies_500_response.go
