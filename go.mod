@@ -1,4 +1,4 @@
-module github.com-alvarez01337/alvarez01337/go-sdk
+module github.com/ForecastAPI/go-sdk
 
 go 1.23
 

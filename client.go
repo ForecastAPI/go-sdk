@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.0.3
+API version: 2.0.4
 Contact: support@forecastapi.com
 */
 
@@ -42,7 +42,7 @@ var (
 	queryDescape    = strings.NewReplacer( "%5B", "[", "%5D", "]" )
 )
 
-// APIClient manages communication with the ForecastAPI API v2.0.3
+// APIClient manages communication with the ForecastAPI API v2.0.4
 // In most cases there should be only one, shared, APIClient.
 type APIClient struct {
 	cfg    *Configuration

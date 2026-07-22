@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"os"
     "time"
-	openapiclient "github.com-alvarez01337/alvarez01337/go-sdk"
+	openapiclient "github.com/ForecastAPI/go-sdk"
 )
 
 func main() {

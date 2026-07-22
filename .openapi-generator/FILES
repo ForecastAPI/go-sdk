@@ -1,4 +1,5 @@
 .gitignore
+.openapi-generator-ignore
 .travis.yml
 README.md
 api/openapi.yaml
@@ -250,4 +251,13 @@ model_validation_error_response.go
 model_validation_failed_response.go
 model_value_bounds.go
 response.go
+test/api_analysis_test.go
+test/api_anomaly_detection_test.go
+test/api_batch_forecasting_test.go
+test/api_forecasting_test.go
+test/api_grouped_forecasting_test.go
+test/api_health_test.go
+test/api_inventory_planning_test.go
+test/api_product_insights_test.go
+test/api_traffic_forecasting_test.go
 utils.go
