@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.0.4
+API version: 2.1.0
 Contact: support@forecastapi.com
 */
 
