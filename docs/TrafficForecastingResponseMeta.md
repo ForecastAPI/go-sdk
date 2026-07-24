@@ -5,6 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Timing** | Pointer to [**TrafficForecastingResponseMetaTiming**](TrafficForecastingResponseMetaTiming.md) |  | [optional] 
+**AutoSelection** | Pointer to [**AutoSelection**](AutoSelection.md) |  | [optional] 
 
 ## Methods
 
@@ -49,6 +50,31 @@ SetTiming sets Timing field to given value.
 `func (o *TrafficForecastingResponseMeta) HasTiming() bool`
 
 HasTiming returns a boolean if a field has been set.
+
+### GetAutoSelection
+
+`func (o *TrafficForecastingResponseMeta) GetAutoSelection() AutoSelection`
+
+GetAutoSelection returns the AutoSelection field if non-nil, zero value otherwise.
+
+### GetAutoSelectionOk
+
+`func (o *TrafficForecastingResponseMeta) GetAutoSelectionOk() (*AutoSelection, bool)`
+
+GetAutoSelectionOk returns a tuple with the AutoSelection field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAutoSelection
+
+`func (o *TrafficForecastingResponseMeta) SetAutoSelection(v AutoSelection)`
+
+SetAutoSelection sets AutoSelection field to given value.
+
+### HasAutoSelection
+
+`func (o *TrafficForecastingResponseMeta) HasAutoSelection() bool`
+
+HasAutoSelection returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

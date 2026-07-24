@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **Periods** | Pointer to **int32** | Default forecast horizon for series that don&#39;t set their own | [optional] [default to 6]
 **Frequency** | Pointer to **string** | Default data frequency | [optional] 
 **DataType** | Pointer to **string** | Default data type | [optional] 
-**Model** | Pointer to **string** | Forecasting engine for the whole batch (request-level only) | [optional] [default to "standard"]
+**Model** | Pointer to **string** | Default forecasting engine for series that don&#39;t set their own. &#x60;auto&#x60; routes each series independently on its own realized-accuracy scorecard. Usage is billed per series at its effective model&#39;s rate.  | [optional] [default to "standard"]
 **Confidence** | Pointer to **float32** | Default confidence level for prediction intervals | [optional] [default to 0.8]
 **ConfidenceLevel** | Pointer to **float32** | Alias for &#x60;confidence&#x60; | [optional] 
 **Quantiles** | Pointer to **[]float32** | Decile levels to return per period — only deciles between 0.1 and 0.9 are accepted, because those are the levels every backend produces natively; anything finer would be interpolation served under a label the model never predicted. Adds a &#x60;quantiles&#x60; object to each forecast row alongside the usual bounds. Honoured by /v2/forecast and /v2/batch/forecast (request-level default or per-series override); rejected on grouped forecasts; ignored by other endpoints sharing this request shape.  | [optional] 

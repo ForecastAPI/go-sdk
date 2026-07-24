@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -90,7 +90,7 @@ type Configuration struct {
 func NewConfiguration() *Configuration {
 	cfg := &Configuration{
 		DefaultHeader:    make(map[string]string),
-		UserAgent:        "OpenAPI-Generator/2.1.0/go",
+		UserAgent:        "OpenAPI-Generator/2.2.0/go",
 		Debug:            false,
 		Servers:          ServerConfigurations{
 			{

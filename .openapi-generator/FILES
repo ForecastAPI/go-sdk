@@ -37,6 +37,8 @@ docs/AnomalyDetectionResponseResult.md
 docs/AnomalyDetectionResponseResultAnalysis.md
 docs/AnomalyDetectionResponseResultAnalysisDetectionSummary.md
 docs/AnomalyDetectionResponseResultAnomaliesInner.md
+docs/AutoSelection.md
+docs/AutoSelectionScoresValue.md
 docs/BatchForecastAccepted.md
 docs/BatchForecastRequest.md
 docs/BatchForecastSeries.md
@@ -159,6 +161,8 @@ model_anomaly_detection_response_result.go
 model_anomaly_detection_response_result_analysis.go
 model_anomaly_detection_response_result_analysis_detection_summary.go
 model_anomaly_detection_response_result_anomalies_inner.go
+model_auto_selection.go
+model_auto_selection_scores_value.go
 model_batch_forecast_accepted.go
 model_batch_forecast_request.go
 model_batch_forecast_series.go

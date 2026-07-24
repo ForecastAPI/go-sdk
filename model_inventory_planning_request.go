@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -30,6 +30,8 @@ type InventoryPlanningRequest struct {
 	StartDate NullableString `json:"start_date,omitempty"`
 	// Number of periods to forecast ahead
 	Periods int32 `json:"periods"`
+	// Forecasting model behind the plan. `auto` routes the identifier to whichever model has proven most accurate on it, sharing the scorecard built by /v2/forecast and /v2/batch/forecast; on this endpoint auto's ensemble default runs as `standard` until a winner emerges, and the decision is reported in `meta.auto_selection`. Advanced variants, ensemble and auto cost 25% more usage. 
+	Model *string `json:"model,omitempty"`
 	// Enable intelligent data aggregation for improved forecasting
 	EnableIntelligentAggregation *bool `json:"enable_intelligent_aggregation,omitempty"`
 	// Confidence level for forecast intervals (default 0.95)
@@ -50,6 +52,8 @@ func NewInventoryPlanningRequest(identifier string, frequency string, periods in
 	this.Identifier = identifier
 	this.Frequency = frequency
 	this.Periods = periods
+	var model string = "standard"
+	this.Model = &model
 	this.Data = data
 	this.InventorySettings = inventorySettings
 	return &this
@@ -60,6 +64,8 @@ func NewInventoryPlanningRequest(identifier string, frequency string, periods in
 // but it doesn't guarantee that properties required by API are set
 func NewInventoryPlanningRequestWithDefaults() *InventoryPlanningRequest {
 	this := InventoryPlanningRequest{}
+	var model string = "standard"
+	this.Model = &model
 	return &this
 }
 
@@ -175,6 +181,38 @@ func (o *InventoryPlanningRequest) GetPeriodsOk() (*int32, bool) {
 // SetPeriods sets field value
 func (o *InventoryPlanningRequest) SetPeriods(v int32) {
 	o.Periods = v
+}
+
+// GetModel returns the Model field value if set, zero value otherwise.
+func (o *InventoryPlanningRequest) GetModel() string {
+	if o == nil || IsNil(o.Model) {
+		var ret string
+		return ret
+	}
+	return *o.Model
+}
+
+// GetModelOk returns a tuple with the Model field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InventoryPlanningRequest) GetModelOk() (*string, bool) {
+	if o == nil || IsNil(o.Model) {
+		return nil, false
+	}
+	return o.Model, true
+}
+
+// HasModel returns a boolean if a field has been set.
+func (o *InventoryPlanningRequest) HasModel() bool {
+	if o != nil && !IsNil(o.Model) {
+		return true
+	}
+
+	return false
+}
+
+// SetModel gets a reference to the given string and assigns it to the Model field.
+func (o *InventoryPlanningRequest) SetModel(v string) {
+	o.Model = &v
 }
 
 // GetEnableIntelligentAggregation returns the EnableIntelligentAggregation field value if set, zero value otherwise.
@@ -305,6 +343,9 @@ func (o InventoryPlanningRequest) ToMap() (map[string]interface{}, error) {
 		toSerialize["start_date"] = o.StartDate.Get()
 	}
 	toSerialize["periods"] = o.Periods
+	if !IsNil(o.Model) {
+		toSerialize["model"] = o.Model
+	}
 	if !IsNil(o.EnableIntelligentAggregation) {
 		toSerialize["enable_intelligent_aggregation"] = o.EnableIntelligentAggregation
 	}

@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -18,7 +18,7 @@ import (
 // checks if the BatchForecastRequest type satisfies the MappedNullable interface at compile time
 var _ MappedNullable = &BatchForecastRequest{}
 
-// BatchForecastRequest Either `series` (inline) or `file_key` (file-based, from /v2/batch/forecast/presign) is required. Every other field is a request-level default that each series inherits unless it declares its own override — except `model`, which is request-level only. `confidence_level` is accepted as an alias for `confidence`; if both are sent, `confidence` wins. 
+// BatchForecastRequest Either `series` (inline) or `file_key` (file-based, from /v2/batch/forecast/presign) is required. Every other field is a request-level default that each series inherits unless it declares its own override — `model` included. `confidence_level` is accepted as an alias for `confidence`; if both are sent, `confidence` wins. 
 type BatchForecastRequest struct {
 	// The series to forecast — up to 100,000 per call on a paid plan, 10 on the free tier
 	Series []BatchForecastSeries `json:"series,omitempty"`
@@ -30,7 +30,7 @@ type BatchForecastRequest struct {
 	Frequency *string `json:"frequency,omitempty"`
 	// Default data type
 	DataType *string `json:"data_type,omitempty"`
-	// Forecasting engine for the whole batch (request-level only)
+	// Default forecasting engine for series that don't set their own. `auto` routes each series independently on its own realized-accuracy scorecard. Usage is billed per series at its effective model's rate. 
 	Model *string `json:"model,omitempty"`
 	// Default confidence level for prediction intervals
 	Confidence *float32 `json:"confidence,omitempty"`

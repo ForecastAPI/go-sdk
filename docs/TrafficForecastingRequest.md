@@ -8,6 +8,7 @@ Name | Type | Description | Notes
 **Frequency** | **string** | Data frequency for forecasting: - M: Minute (for real-time traffic) - H: Hourly - D: Daily - W: Weekly - MS: Monthly (start of month) - ME: Monthly (end of month) - Q: Quarterly - Y: Yearly  | 
 **StartDate** | Pointer to **NullableTime** | Optional start date for the forecast period | [optional] 
 **Periods** | **int32** | Number of periods to forecast ahead | 
+**Model** | Pointer to **string** | Forecasting model behind the plan. &#x60;auto&#x60; routes the identifier to whichever model has proven most accurate on it, sharing the scorecard built by /v2/forecast and /v2/batch/forecast; on this endpoint auto&#39;s ensemble default runs as &#x60;standard&#x60; until a winner emerges, and the decision is reported in &#x60;meta.auto_selection&#x60;. Advanced variants, ensemble and auto cost 25% more usage.  | [optional] [default to "standard"]
 **EnableIntelligentAggregation** | Pointer to **bool** | Enable intelligent data aggregation for improved forecasting | [optional] 
 **ConfidenceLevel** | Pointer to **float32** | Confidence level for forecast intervals (default 0.95) | [optional] 
 **Data** | [**[]TrafficForecastingRequestDataInner**](TrafficForecastingRequestDataInner.md) | Historical traffic data for forecasting | 
@@ -126,6 +127,31 @@ and a boolean to check if the value has been set.
 
 SetPeriods sets Periods field to given value.
 
+
+### GetModel
+
+`func (o *TrafficForecastingRequest) GetModel() string`
+
+GetModel returns the Model field if non-nil, zero value otherwise.
+
+### GetModelOk
+
+`func (o *TrafficForecastingRequest) GetModelOk() (*string, bool)`
+
+GetModelOk returns a tuple with the Model field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetModel
+
+`func (o *TrafficForecastingRequest) SetModel(v string)`
+
+SetModel sets Model field to given value.
+
+### HasModel
+
+`func (o *TrafficForecastingRequest) HasModel() bool`
+
+HasModel returns a boolean if a field has been set.
 
 ### GetEnableIntelligentAggregation
 

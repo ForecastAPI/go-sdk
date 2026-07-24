@@ -12,6 +12,7 @@ Name | Type | Description | Notes
 **DataType** | Pointer to **string** | Override of the request-level data type | [optional] 
 **Confidence** | Pointer to **float32** | Override of the request-level confidence | [optional] 
 **ConfidenceLevel** | Pointer to **float32** | Alias for &#x60;confidence&#x60; | [optional] 
+**Model** | Pointer to **string** | Override of the request-level forecasting engine for this series | [optional] 
 **Quantiles** | Pointer to **[]float32** | Decile levels to return per period — only deciles between 0.1 and 0.9 are accepted, because those are the levels every backend produces natively; anything finer would be interpolation served under a label the model never predicted. Adds a &#x60;quantiles&#x60; object to each forecast row alongside the usual bounds. Honoured by /v2/forecast and /v2/batch/forecast (request-level default or per-series override); rejected on grouped forecasts; ignored by other endpoints sharing this request shape.  | [optional] 
 **ValueBounds** | Pointer to [**ValueBounds**](ValueBounds.md) |  | [optional] 
 **Adjustments** | Pointer to [**[]AdjustmentsInner**](AdjustmentsInner.md) | What-if scenario applied on top of the forecast (\&quot;assume we lose the enterprise deal\&quot;). Adjustments compose in array order — ×2 then +50 is not +50 then ×2. Each one moves the point, both bounds and any quantile fan together. Returns an &#x60;adjusted&#x60; block; the adjusted path is never stored or accuracy-tracked. Honoured by /v2/forecast and /v2/batch/forecast (request-level default or per-series override — period windows are checked against each series&#39; own horizon); rejected on grouped forecasts; ignored by other endpoints sharing this request shape.  | [optional] 
@@ -235,6 +236,31 @@ SetConfidenceLevel sets ConfidenceLevel field to given value.
 `func (o *BatchForecastSeries) HasConfidenceLevel() bool`
 
 HasConfidenceLevel returns a boolean if a field has been set.
+
+### GetModel
+
+`func (o *BatchForecastSeries) GetModel() string`
+
+GetModel returns the Model field if non-nil, zero value otherwise.
+
+### GetModelOk
+
+`func (o *BatchForecastSeries) GetModelOk() (*string, bool)`
+
+GetModelOk returns a tuple with the Model field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetModel
+
+`func (o *BatchForecastSeries) SetModel(v string)`
+
+SetModel sets Model field to given value.
+
+### HasModel
+
+`func (o *BatchForecastSeries) HasModel() bool`
+
+HasModel returns a boolean if a field has been set.
 
 ### GetQuantiles
 

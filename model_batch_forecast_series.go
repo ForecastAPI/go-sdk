@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -38,6 +38,8 @@ type BatchForecastSeries struct {
 	Confidence *float32 `json:"confidence,omitempty"`
 	// Alias for `confidence`
 	ConfidenceLevel *float32 `json:"confidence_level,omitempty"`
+	// Override of the request-level forecasting engine for this series
+	Model *string `json:"model,omitempty"`
 	// Decile levels to return per period — only deciles between 0.1 and 0.9 are accepted, because those are the levels every backend produces natively; anything finer would be interpolation served under a label the model never predicted. Adds a `quantiles` object to each forecast row alongside the usual bounds. Honoured by /v2/forecast and /v2/batch/forecast (request-level default or per-series override); rejected on grouped forecasts; ignored by other endpoints sharing this request shape. 
 	Quantiles []float32 `json:"quantiles,omitempty"`
 	ValueBounds *ValueBounds `json:"value_bounds,omitempty"`
@@ -317,6 +319,38 @@ func (o *BatchForecastSeries) SetConfidenceLevel(v float32) {
 	o.ConfidenceLevel = &v
 }
 
+// GetModel returns the Model field value if set, zero value otherwise.
+func (o *BatchForecastSeries) GetModel() string {
+	if o == nil || IsNil(o.Model) {
+		var ret string
+		return ret
+	}
+	return *o.Model
+}
+
+// GetModelOk returns a tuple with the Model field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *BatchForecastSeries) GetModelOk() (*string, bool) {
+	if o == nil || IsNil(o.Model) {
+		return nil, false
+	}
+	return o.Model, true
+}
+
+// HasModel returns a boolean if a field has been set.
+func (o *BatchForecastSeries) HasModel() bool {
+	if o != nil && !IsNil(o.Model) {
+		return true
+	}
+
+	return false
+}
+
+// SetModel gets a reference to the given string and assigns it to the Model field.
+func (o *BatchForecastSeries) SetModel(v string) {
+	o.Model = &v
+}
+
 // GetQuantiles returns the Quantiles field value if set, zero value otherwise.
 func (o *BatchForecastSeries) GetQuantiles() []float32 {
 	if o == nil || IsNil(o.Quantiles) {
@@ -474,6 +508,9 @@ func (o BatchForecastSeries) ToMap() (map[string]interface{}, error) {
 	}
 	if !IsNil(o.ConfidenceLevel) {
 		toSerialize["confidence_level"] = o.ConfidenceLevel
+	}
+	if !IsNil(o.Model) {
+		toSerialize["model"] = o.Model
 	}
 	if !IsNil(o.Quantiles) {
 		toSerialize["quantiles"] = o.Quantiles

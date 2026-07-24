@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -38,7 +38,7 @@ type GroupedForecastRequest struct {
 	Periods int32 `json:"periods"`
 	// Type of data (e.g., sales, demand, revenue). Sales-family types get non-negative reconciliation treatment.
 	DataType *string `json:"data_type,omitempty"`
-	// Forecasting engine used for every node
+	// Forecasting engine used for every node. `auto` is not accepted here: it routes per series, and a hierarchy is reconciled under one model. 
 	Model *string `json:"model,omitempty"`
 	// Confidence level for prediction intervals, shared by every node
 	Confidence *float32 `json:"confidence,omitempty"`

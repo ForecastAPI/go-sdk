@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -21,6 +21,7 @@ var _ MappedNullable = &TrafficForecastingResponseMeta{}
 // TrafficForecastingResponseMeta struct for TrafficForecastingResponseMeta
 type TrafficForecastingResponseMeta struct {
 	Timing *TrafficForecastingResponseMetaTiming `json:"timing,omitempty"`
+	AutoSelection *AutoSelection `json:"auto_selection,omitempty"`
 }
 
 // NewTrafficForecastingResponseMeta instantiates a new TrafficForecastingResponseMeta object
@@ -72,6 +73,38 @@ func (o *TrafficForecastingResponseMeta) SetTiming(v TrafficForecastingResponseM
 	o.Timing = &v
 }
 
+// GetAutoSelection returns the AutoSelection field value if set, zero value otherwise.
+func (o *TrafficForecastingResponseMeta) GetAutoSelection() AutoSelection {
+	if o == nil || IsNil(o.AutoSelection) {
+		var ret AutoSelection
+		return ret
+	}
+	return *o.AutoSelection
+}
+
+// GetAutoSelectionOk returns a tuple with the AutoSelection field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *TrafficForecastingResponseMeta) GetAutoSelectionOk() (*AutoSelection, bool) {
+	if o == nil || IsNil(o.AutoSelection) {
+		return nil, false
+	}
+	return o.AutoSelection, true
+}
+
+// HasAutoSelection returns a boolean if a field has been set.
+func (o *TrafficForecastingResponseMeta) HasAutoSelection() bool {
+	if o != nil && !IsNil(o.AutoSelection) {
+		return true
+	}
+
+	return false
+}
+
+// SetAutoSelection gets a reference to the given AutoSelection and assigns it to the AutoSelection field.
+func (o *TrafficForecastingResponseMeta) SetAutoSelection(v AutoSelection) {
+	o.AutoSelection = &v
+}
+
 func (o TrafficForecastingResponseMeta) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -84,6 +117,9 @@ func (o TrafficForecastingResponseMeta) ToMap() (map[string]interface{}, error) 
 	toSerialize := map[string]interface{}{}
 	if !IsNil(o.Timing) {
 		toSerialize["timing"] = o.Timing
+	}
+	if !IsNil(o.AutoSelection) {
+		toSerialize["auto_selection"] = o.AutoSelection
 	}
 	return toSerialize, nil
 }

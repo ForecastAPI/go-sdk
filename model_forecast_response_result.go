@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -25,7 +25,7 @@ type ForecastResponseResult struct {
 	TenantContext NullableString `json:"tenant_context,omitempty"`
 	// One row per forecast period. Each period carries its own bounds, and they widen with horizon.
 	Forecasts []ForecastPeriod `json:"forecasts,omitempty"`
-	// The selected model (`best_model`), the models evaluated, the interval source, and per-model back-testing scores (smape/mape/mase) when validation runs. Also carries `bounds_transform` when `value_bounds` was sent, and `quantile_levels` when a fan was requested. 
+	// The selected model (`best_model`), the models evaluated, the interval source, and per-model back-testing scores (smape/mape/mase) when validation runs. Also carries `bounds_transform` when `value_bounds` was sent, `quantile_levels` when a fan was requested, and `auto_selection` (see the AutoSelection schema) when `model: auto` was requested. 
 	ModelInfo map[string]interface{} `json:"model_info,omitempty"`
 }
 

@@ -3,7 +3,7 @@ ForecastAPI
 
 Time series forecasting service with multiple algorithms and automatic method selection
 
-API version: 2.1.0
+API version: 2.2.0
 Contact: support@forecastapi.com
 */
 
@@ -34,7 +34,7 @@ type AnomalyDetectionRequest struct {
 	DataType string `json:"data_type"`
 	// Number of periods to forecast
 	Periods int32 `json:"periods"`
-	// Which forecasting engine to use. The advanced variants and ensemble provide higher accuracy at a higher usage cost than standard. 
+	// Which forecasting engine to use. The advanced variants, ensemble and auto provide higher accuracy at a higher usage cost than standard.  `auto` routes each identifier to whichever model has proven most accurate on that series: a new identifier starts on the ensemble, and as actuals arrive for previously forecast dates, every model's realized accuracy is scored; once one clearly wins, that identifier is routed to it. The response reports the decision in `model_info.auto_selection`. Billed at the ensemble rate whichever model it routes to. 
 	Model *string `json:"model,omitempty"`
 	// Confidence level for the prediction interval. Note that 0.80 is the widest band the foundation models (advanced-quantized, advanced-patched, ensemble) produce natively — for genuinely distinct levels beyond that, request a quantile fan via `quantiles` instead of repeating the call at several confidence levels. 
 	ConfidenceLevel *float32 `json:"confidence_level,omitempty"`

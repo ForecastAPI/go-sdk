@@ -6,7 +6,7 @@ info:
   description: Time series forecasting service with multiple algorithms and automatic
     method selection
   title: ForecastAPI
-  version: 2.1.0
+  version: 2.2.0
 servers:
 - description: Production server
   url: https://forecastapi.com
@@ -939,14 +939,22 @@ components:
         model:
           default: standard
           description: |
-            Which forecasting engine to use. The advanced variants and ensemble provide
-            higher accuracy at a higher usage cost than standard.
+            Which forecasting engine to use. The advanced variants, ensemble and auto
+            provide higher accuracy at a higher usage cost than standard.
+
+            `auto` routes each identifier to whichever model has proven most accurate on
+            that series: a new identifier starts on the ensemble, and as actuals arrive
+            for previously forecast dates, every model's realized accuracy is scored;
+            once one clearly wins, that identifier is routed to it. The response reports
+            the decision in `model_info.auto_selection`. Billed at the ensemble rate
+            whichever model it routes to.
           enum:
           - standard
           - advanced
           - advanced-quantized
           - advanced-patched
           - ensemble
+          - auto
           example: standard
           type: string
         confidence_level:
@@ -1144,11 +1152,53 @@ components:
           minimum: 0
           type: number
       type: object
+    AutoSelection:
+      description: |
+        Present only when `model: auto` was requested — which model actually answered,
+        and why. On /v2/forecast and batch results it appears inside `model_info`; on
+        /v2/inventory-planning and /v2/traffic-forecasting it appears under `meta`.
+      example:
+        reason: no_history
+        requested: auto
+        scores:
+          key:
+            mase: 0.8008281904610115
+            matched_periods: 6
+            forecast_runs: 1
+        selected: ensemble
+      properties:
+        requested:
+          example: auto
+          type: string
+        selected:
+          description: The model that produced this response
+          example: ensemble
+          type: string
+        reason:
+          description: |
+            Why this model was selected. `scored_winner` means one model beat every
+            alternative by a clear margin on realized accuracy for this identifier;
+            everything else means the evidence-gathering default was served.
+          enum:
+          - no_history
+          - insufficient_evidence
+          - no_clear_winner
+          - scored_winner
+          example: no_history
+          type: string
+        scores:
+          additionalProperties:
+            $ref: "#/components/schemas/AutoSelection_scores_value"
+          description: "Per-model realized-accuracy scorecard for this identifier,\
+            \ when one exists"
+          nullable: true
+          type: object
+      type: object
     BatchForecastRequest:
       description: |
         Either `series` (inline) or `file_key` (file-based, from /v2/batch/forecast/presign)
         is required. Every other field is a request-level default that each series inherits
-        unless it declares its own override — except `model`, which is request-level only.
+        unless it declares its own override — `model` included.
         `confidence_level` is accepted as an alias for `confidence`; if both are sent,
         `confidence` wins.
       example:
@@ -1182,11 +1232,7 @@ components:
           value: 0.8
           to_period: 9
         series:
-        - quantiles:
-          - 0.1
-          - 0.5
-          - 0.9
-          identifier: SKU-001
+        - identifier: SKU-001
           value_bounds:
             min: 0
             max: 100
@@ -1218,19 +1264,20 @@ components:
             value: 100
           confidence: 0.6364436002932659
           confidence_level: 0.23045735526476213
+          frequency: H
+          quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
           data_type: data_type
           periods: 30
           accumulate:
             correlation: 0.5
             decay: 0.95
             discount_rate: 0.1
+          model: standard
           tenant_context: plan-pro
-          frequency: H
-        - quantiles:
-          - 0.1
-          - 0.5
-          - 0.9
-          identifier: SKU-001
+        - identifier: SKU-001
           value_bounds:
             min: 0
             max: 100
@@ -1262,19 +1309,20 @@ components:
             value: 100
           confidence: 0.6364436002932659
           confidence_level: 0.23045735526476213
+          frequency: H
+          quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
           data_type: data_type
           periods: 30
           accumulate:
             correlation: 0.5
             decay: 0.95
             discount_rate: 0.1
+          model: standard
           tenant_context: plan-pro
-          frequency: H
-        - quantiles:
-          - 0.1
-          - 0.5
-          - 0.9
-          identifier: SKU-001
+        - identifier: SKU-001
           value_bounds:
             min: 0
             max: 100
@@ -1306,19 +1354,20 @@ components:
             value: 100
           confidence: 0.6364436002932659
           confidence_level: 0.23045735526476213
+          frequency: H
+          quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
           data_type: data_type
           periods: 30
           accumulate:
             correlation: 0.5
             decay: 0.95
             discount_rate: 0.1
+          model: standard
           tenant_context: plan-pro
-          frequency: H
-        - quantiles:
-          - 0.1
-          - 0.5
-          - 0.9
-          identifier: SKU-001
+        - identifier: SKU-001
           value_bounds:
             min: 0
             max: 100
@@ -1350,19 +1399,20 @@ components:
             value: 100
           confidence: 0.6364436002932659
           confidence_level: 0.23045735526476213
+          frequency: H
+          quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
           data_type: data_type
           periods: 30
           accumulate:
             correlation: 0.5
             decay: 0.95
             discount_rate: 0.1
+          model: standard
           tenant_context: plan-pro
-          frequency: H
-        - quantiles:
-          - 0.1
-          - 0.5
-          - 0.9
-          identifier: SKU-001
+        - identifier: SKU-001
           value_bounds:
             min: 0
             max: 100
@@ -1394,14 +1444,19 @@ components:
             value: 100
           confidence: 0.6364436002932659
           confidence_level: 0.23045735526476213
+          frequency: H
+          quantiles:
+          - 0.1
+          - 0.5
+          - 0.9
           data_type: data_type
           periods: 30
           accumulate:
             correlation: 0.5
             decay: 0.95
             discount_rate: 0.1
+          model: standard
           tenant_context: plan-pro
-          frequency: H
         confidence: 0.6017265224403662
         confidence_level: 0.30489009393719413
         data_type: sales
@@ -1455,13 +1510,17 @@ components:
           type: string
         model:
           default: standard
-          description: Forecasting engine for the whole batch (request-level only)
+          description: |
+            Default forecasting engine for series that don't set their own. `auto` routes
+            each series independently on its own realized-accuracy scorecard. Usage is
+            billed per series at its effective model's rate.
           enum:
           - standard
           - advanced
           - advanced-quantized
           - advanced-patched
           - ensemble
+          - auto
           type: string
         confidence:
           default: 0.8
@@ -1523,10 +1582,6 @@ components:
       type: object
     BatchForecastSeries:
       example:
-        quantiles:
-        - 0.1
-        - 0.5
-        - 0.9
         identifier: SKU-001
         value_bounds:
           min: 0
@@ -1559,14 +1614,19 @@ components:
           value: 100
         confidence: 0.6364436002932659
         confidence_level: 0.23045735526476213
+        frequency: H
+        quantiles:
+        - 0.1
+        - 0.5
+        - 0.9
         data_type: data_type
         periods: 30
         accumulate:
           correlation: 0.5
           decay: 0.95
           discount_rate: 0.1
+        model: standard
         tenant_context: plan-pro
-        frequency: H
       properties:
         identifier:
           description: "SKU, Product ID, or other identifier for this series"
@@ -1616,6 +1676,16 @@ components:
           maximum: 0.99
           minimum: 0.1
           type: number
+        model:
+          description: Override of the request-level forecasting engine for this series
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          - auto
+          type: string
         quantiles:
           description: |
             Decile levels to return per period — only deciles between 0.1 and 0.9 are
@@ -3080,7 +3150,9 @@ components:
           type: string
         model:
           default: standard
-          description: Forecasting engine used for every node
+          description: |
+            Forecasting engine used for every node. `auto` is not accepted here: it routes
+            per series, and a hierarchy is reconciled under one model.
           enum:
           - standard
           - advanced
@@ -3353,6 +3425,7 @@ components:
           value: 150.5
         confidence_level: 0.95
         periods: 6
+        model: standard
         enable_intelligent_aggregation: true
         inventory_settings:
           current_stock: 250
@@ -3407,6 +3480,22 @@ components:
           example: 6
           minimum: 1
           type: integer
+        model:
+          default: standard
+          description: |
+            Forecasting model behind the plan. `auto` routes the identifier to whichever
+            model has proven most accurate on it, sharing the scorecard built by
+            /v2/forecast and /v2/batch/forecast; on this endpoint auto's ensemble default
+            runs as `standard` until a winner emerges, and the decision is reported in
+            `meta.auto_selection`. Advanced variants, ensemble and auto cost 25% more usage.
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          - auto
+          type: string
         enable_intelligent_aggregation:
           description: Enable intelligent data aggregation for improved forecasting
           example: true
@@ -3483,6 +3572,15 @@ components:
             daily_demand_rate: 5.5
           reorder_point: 175.5
         meta:
+          auto_selection:
+            reason: no_history
+            requested: auto
+            scores:
+              key:
+                mase: 0.8008281904610115
+                matched_periods: 6
+                forecast_runs: 1
+            selected: ensemble
           timing:
             planning: 187.3
             total: 199.8
@@ -3503,6 +3601,7 @@ components:
           value: 1500
         confidence_level: 0.95
         periods: 24
+        model: standard
         traffic_settings:
           anomaly_threshold: 3.0
           cost_per_unit: 0.01
@@ -3555,6 +3654,22 @@ components:
           example: 24
           minimum: 1
           type: integer
+        model:
+          default: standard
+          description: |
+            Forecasting model behind the plan. `auto` routes the identifier to whichever
+            model has proven most accurate on it, sharing the scorecard built by
+            /v2/forecast and /v2/batch/forecast; on this endpoint auto's ensemble default
+            runs as `standard` until a winner emerges, and the decision is reported in
+            `meta.auto_selection`. Advanced variants, ensemble and auto cost 25% more usage.
+          enum:
+          - standard
+          - advanced
+          - advanced-quantized
+          - advanced-patched
+          - ensemble
+          - auto
+          type: string
         enable_intelligent_aggregation:
           description: Enable intelligent data aggregation for improved forecasting
           example: true
@@ -3679,6 +3794,15 @@ components:
               scaling_factor: 1.25
             peak_traffic: 1850.5
         meta:
+          auto_selection:
+            reason: no_history
+            requested: auto
+            scores:
+              key:
+                mase: 0.8008281904610115
+                matched_periods: 6
+                forecast_runs: 1
+            selected: ensemble
           timing:
             total: 153.8
             forecasting: 145.3
@@ -3925,6 +4049,24 @@ components:
       required:
       - type
       - value
+      type: object
+    AutoSelection_scores_value:
+      example:
+        mase: 0.8008281904610115
+        matched_periods: 6
+        forecast_runs: 1
+      properties:
+        mase:
+          description: Realized MASE on this identifier (lower is better; < 1 beats
+            a naive forecast)
+          nullable: true
+          type: number
+        matched_periods:
+          description: Matured forecast/actual pairs behind the score
+          type: integer
+        forecast_runs:
+          description: Separate forecast runs the evidence spans
+          type: integer
       type: object
     BatchForecastSeries_data_inner:
       example:
@@ -4778,8 +4920,9 @@ components:
           description: |
             The selected model (`best_model`), the models evaluated, the interval
             source, and per-model back-testing scores (smape/mape/mase) when validation
-            runs. Also carries `bounds_transform` when `value_bounds` was sent, and
-            `quantile_levels` when a fan was requested.
+            runs. Also carries `bounds_transform` when `value_bounds` was sent,
+            `quantile_levels` when a fan was requested, and `auto_selection` (see the
+            AutoSelection schema) when `model: auto` was requested.
           type: object
       type: object
     ForecastResponse_meta_timing:
@@ -5415,6 +5558,15 @@ components:
       type: object
     InventoryPlanningResponse_meta:
       example:
+        auto_selection:
+          reason: no_history
+          requested: auto
+          scores:
+            key:
+              mase: 0.8008281904610115
+              matched_periods: 6
+              forecast_runs: 1
+          selected: ensemble
         timing:
           planning: 187.3
           total: 199.8
@@ -5422,6 +5574,8 @@ components:
       properties:
         timing:
           $ref: "#/components/schemas/InventoryPlanningResponse_meta_timing"
+        auto_selection:
+          $ref: "#/components/schemas/AutoSelection"
       type: object
     TrafficForecastingRequest_data_inner:
       example:
@@ -6069,6 +6223,15 @@ components:
       type: object
     TrafficForecastingResponse_meta:
       example:
+        auto_selection:
+          reason: no_history
+          requested: auto
+          scores:
+            key:
+              mase: 0.8008281904610115
+              matched_periods: 6
+              forecast_runs: 1
+          selected: ensemble
         timing:
           total: 153.8
           forecasting: 145.3
@@ -6076,6 +6239,8 @@ components:
       properties:
         timing:
           $ref: "#/components/schemas/TrafficForecastingResponse_meta_timing"
+        auto_selection:
+          $ref: "#/components/schemas/AutoSelection"
       type: object
   securitySchemes:
     apiKey:
